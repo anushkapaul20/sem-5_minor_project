@@ -1,54 +1,280 @@
 # ============================================================
-# config.yaml
-# Master configuration for the Cryptographic Protocol
-# Attack Detection System.
+# config.yaml — QuantumScyther AI
+# Master configuration file.
 #
-# All paths are relative to the project root unless noted.
-# Override any value by creating a config.local.yaml
-# (gitignored) in the same directory.
+# Sections:
+#   project       — name, version, current phase
+#   paths         — all directory and file paths
+#   engine        — verification engine settings
+#   pqc           — post-quantum checker settings
+#   ai            — LLM integration settings
+#   dataset       — benchmark dataset settings
+#   api           — FastAPI settings
+#   frontend      — Streamlit settings
+#   logging       — log level and file
+#   validation    — anti-fabrication guards
 # ============================================================
 
 project:
-  name: "Cryptographic Protocol Attack Detection"
-  version: "0.1"
-  phase: 0                        # Current active phase (0–6)
-  description: "B.Tech Minor Project: ML + formal verification for cryptographic protocol security analysis"
+  name: "QuantumScyther AI"
+  subtitle: "AI-Powered Cryptographic Protocol Verification with Post-Quantum Awareness"
+  version: "0.2"
+  phase: 2                         # Current active phase (0–6)
+  description: >
+    Custom Dolev-Yao symbolic verification engine + LLM explanation
+    layer + NIST PQC flagging. B.Tech Minor Project, Semester 5.
 
 # ── Paths ──────────────────────────────────────────────────
 paths:
-  data_root: "data"
-  raw: "data/raw"
-  processed: "data/processed"
-  annotations: "data/annotations"
-  splits: "data/splits"
-  versions: "data/versions"
-  papers_root: "papers"
-  paper_metadata: "papers/metadata"
-  paper_sources: "papers/sources"
-  extraction: "extraction"
-  preprocessing: "preprocessing"
-  models_root: "models"
-  saved_models: "models/saved_models"
-  scyther_root: "scyther"
-  scyther_models: "scyther/models"
-  scyther_traces: "scyther/attack_traces"
-  notebooks: "notebooks"
-  tests: "tests"
-  docs: "docs"
-  logs: "logs"
+  # Engine
+  engine_root:          "engine"
+  engine_pqc:           "engine/pqc"
+
+  # AI layer
+  ai_root:              "ai"
+
+  # Dataset (benchmark)
+  data_root:            "data"
+  raw:                  "data/raw"
+  processed:            "data/processed"
+  annotations:          "data/annotations"
+  splits:               "data/splits"
+  versions:             "data/versions"
+
+  # Papers
+  papers_root:          "papers"
+  paper_metadata:       "papers/metadata"
+  paper_sources:        "papers/sources"
+
+  # Extraction pipeline
+  extraction:           "extraction"
+
+  # API / Frontend
+  api_root:             "api"
+  frontend_root:        "frontend"
+
+  # Tests / Docs / Logs
+  tests:                "tests"
+  docs:                 "docs"
+  notebooks:            "notebooks"
+  logs:                 "logs"
+  log_file:             "logs/app.log"
+
+# ── Verification Engine ────────────────────────────────────
+engine:
+  # Hard session bound — never exceed this
+  max_sessions: 2
+
+  # BFS explorer
+  bfs_depth_limit: 50              # max BFS depth before timeout
+  timeout_seconds: 30              # per-analysis wall-clock timeout
+
+  # Attacker model
+  attacker_model: "Dolev-Yao"
+  attacker_capabilities:
+    - intercept
+    - compose
+    - decompose                    # split known Concat/Pair terms
+    - decrypt                      # if key is known
+    - compute_hash                 # H(M) for any known M
+    - replay
+    - reflect
+    - impersonate
+
+  # DH equational theory special cases
+  dh_commutativity: true           # g^(ab) == g^(ba)
+
+  # Property checkers to run by default (all six)
+  enabled_checkers:
+    - secrecy
+    - authentication
+    - replay
+    - reflection
+    - mitm
+    - uks
+
+  # Benchmark validation
+  benchmark:
+    dataset_path:        "data/versions/dataset_v0.json"
+    target_accuracy:     0.85      # ≥ 85% correct detection
+    output_report:       "data/versions/benchmark_report.txt"
+
+# ── Post-Quantum Checker ────────────────────────────────────
+pqc:
+  enabled: true
+
+  # Risk levels
+  risk_levels:
+    BROKEN:   "Completely broken by Shor's algorithm"
+    WEAKENED: "Security halved by Grover's algorithm"
+    SAFE:     "No known quantum vulnerability"
+
+  # Primitive → quantum risk → NIST replacement
+  # Source: NIST FIPS 203/204/205 (August 2024)
+  primitive_table:
+    RSA:
+      threat:       "Shor"
+      risk:         "BROKEN"
+      replacement:  "ML-KEM (FIPS 203) for encryption; ML-DSA (FIPS 204) for signatures"
+      fips:         ["FIPS 203", "FIPS 204"]
+
+    Diffie-Hellman:
+      threat:       "Shor"
+      risk:         "BROKEN"
+      replacement:  "ML-KEM (FIPS 203)"
+      fips:         ["FIPS 203"]
+
+    ECDH:
+      threat:       "Shor"
+      risk:         "BROKEN"
+      replacement:  "ML-KEM (FIPS 203)"
+      fips:         ["FIPS 203"]
+
+    ECC:
+      threat:       "Shor"
+      risk:         "BROKEN"
+      replacement:  "ML-KEM (FIPS 203) or ML-DSA (FIPS 204)"
+      fips:         ["FIPS 203", "FIPS 204"]
+
+    Digital_Signature:
+      threat:       "Shor"
+      risk:         "BROKEN"
+      replacement:  "ML-DSA (FIPS 204) or SLH-DSA (FIPS 205)"
+      fips:         ["FIPS 204", "FIPS 205"]
+
+    Public_Key_Encryption:
+      threat:       "Shor"
+      risk:         "BROKEN"
+      replacement:  "ML-KEM (FIPS 203)"
+      fips:         ["FIPS 203"]
+
+    DES:
+      threat:       "Grover + classically broken"
+      risk:         "BROKEN"
+      replacement:  "AES-256"
+      fips:         []
+
+    3DES:
+      threat:       "Grover + legacy"
+      risk:         "BROKEN"
+      replacement:  "AES-256"
+      fips:         []
+
+    AES:
+      threat:       "Grover (128-bit variant only)"
+      risk:         "WEAKENED"
+      replacement:  "AES-256 for long-term security"
+      fips:         []
+      note:         "AES-256 is acceptable. AES-128 security halved to ~64 bits."
+
+    Hash:
+      threat:       "Grover"
+      risk:         "WEAKENED"
+      replacement:  "SHA-512 or SHA3-512 for long-term use"
+      fips:         []
+      note:         "SHA-256 output halved to ~128 bits. Acceptable for near-term."
+
+    HMAC:
+      threat:       "Grover (on underlying hash)"
+      risk:         "WEAKENED"
+      replacement:  "HMAC-SHA512"
+      fips:         []
+
+    MAC:
+      threat:       "Grover (depends on key size)"
+      risk:         "WEAKENED"
+      replacement:  "Increase key/tag size; use AES-256 base"
+      fips:         []
+
+    # Primitives with no significant quantum vulnerability
+    Nonce:
+      threat:       "None"
+      risk:         "SAFE"
+      replacement:  "No change needed"
+      fips:         []
+
+    Timestamp:
+      threat:       "None"
+      risk:         "SAFE"
+      replacement:  "No change needed"
+      fips:         []
+
+    Shared_Secret:
+      threat:       "Grover (if short)"
+      risk:         "WEAKENED"
+      replacement:  "Use ≥256-bit secrets"
+      fips:         []
+
+    Session_Key:
+      threat:       "Grover (if short)"
+      risk:         "WEAKENED"
+      replacement:  "Use ≥256-bit session keys derived from ML-KEM"
+      fips:         ["FIPS 203"]
+
+    Certificate:
+      threat:       "Shor (on signature algorithm)"
+      risk:         "BROKEN"
+      replacement:  "Re-issue certificates with ML-DSA or SLH-DSA keys"
+      fips:         ["FIPS 204", "FIPS 205"]
+
+    Password:
+      threat:       "Grover (on hash used in KDF)"
+      risk:         "WEAKENED"
+      replacement:  "Use Argon2 with higher memory/time cost"
+      fips:         []
+
+    Symmetric_Encryption:
+      threat:       "Grover"
+      risk:         "WEAKENED"
+      replacement:  "Use AES-256 or ChaCha20-256"
+      fips:         []
+
+    Challenge_Response:
+      threat:       "None (mechanism, not primitive)"
+      risk:         "SAFE"
+      replacement:  "No change to mechanism; update underlying primitive"
+      fips:         []
+
+# ── AI Layer ───────────────────────────────────────────────
+ai:
+  # LLM provider — set to "openai" or "anthropic"
+  # If no API key is set, system falls back to YAML manual input
+  provider: "openai"               # "openai" | "anthropic" | "none"
+
+  openai:
+    model: "gpt-4o"
+    temperature: 0.0               # deterministic output
+    max_tokens: 2048
+
+  anthropic:
+    model: "claude-3-5-sonnet-20241022"
+    temperature: 0.0
+    max_tokens: 2048
+
+  # LaTeX parser settings
+  latex_parser:
+    few_shot_examples: 5           # number of examples in prompt
+    ast_validation: true           # validate parsed AST before passing to engine
+    fallback: "yaml"               # "yaml" = accept manual YAML if LLM fails
+
+  # Explainer settings
+  explainer:
+    # Rule: explanation must be grounded in engine trace — never independent
+    grounded_only: true
+    include_fix_suggestion: true
+    include_pqc_suggestion: true
+    max_explanation_length: 300    # words
 
 # ── Dataset ────────────────────────────────────────────────
 dataset:
   current_version: "v0"
-  base_filename: "dataset"           # Results in dataset_v0.csv, dataset_v1.csv, etc.
+  base_filename:   "dataset"
   formats:
     - "csv"
     - "json"
-    - "xlsx"                         # For human review only
-  encoding: "utf-8"
-  separator: ","
+    - "xlsx"
+  encoding:        "utf-8"
 
-  # Fields that must be present and non-null for a row to be valid
   required_fields:
     - "paper_id"
     - "paper_title"
@@ -56,15 +282,8 @@ dataset:
     - "attack_present"
     - "extraction_status"
 
-  # Fields whose values must come from a controlled vocabulary
-  controlled_vocab_fields:
-    - "attack_category"
-    - "extraction_status"
-    - "source_type"
-
-# ── Attack Taxonomy ────────────────────────────────────────
-attacks:
-  categories:
+  # Attack category controlled vocabulary
+  attack_categories:
     - "MITM"
     - "Replay"
     - "Reflection"
@@ -75,199 +294,55 @@ attacks:
     - "Session_Key_Compromise"
     - "KCI"
     - "Forward_Secrecy_Violation"
-    - "None"                          # Used when no attack is present
-
-  # For binary classification
-  binary_label_field: "attack_present"
-  binary_positive: 1                  # Attack present
-  binary_negative: 0                  # No attack (secure protocol)
-
-  # For multi-label: a protocol can have multiple attack categories
-  multi_label: true
-
-# ── Cryptographic Primitives (controlled vocabulary) ───────
-primitives:
-  categories:
-    - "RSA"
-    - "Diffie-Hellman"
-    - "ECDH"
-    - "ECC"
-    - "AES"
-    - "DES"
-    - "3DES"
-    - "Hash"
-    - "HMAC"
-    - "MAC"
-    - "Digital_Signature"
-    - "Public_Key_Encryption"
-    - "Symmetric_Encryption"
-    - "Nonce"
-    - "Timestamp"
-    - "Password"
-    - "Shared_Secret"
-    - "Session_Key"
-    - "Certificate"
-    - "Challenge_Response"
-
-# ── Extraction Pipeline ────────────────────────────────────
-extraction:
-  # Possible values for extraction_status field
-  status_values:
-    - "AUTO_EXTRACTED"
-    - "HUMAN_VERIFIED"
-    - "REQUIRES_REVIEW"
-
-  # Possible values for source_type field
-  source_types:
-    - "conference_paper"
-    - "journal_article"
-    - "thesis"
-    - "technical_report"
-    - "textbook"
-    - "rfc"
-    - "standard"
-
-  # Equation detection regex patterns (used in equation_extractor.py)
-  equation_patterns:
-    arrow_notation: '([A-Z][a-z]?)\s*→\s*([A-Z][a-z]?)\s*:\s*(.+)'
-    encrypted_msg: '\{[^}]+\}_?\w+'
-    hash_expr: 'H\s*\([^)]+\)'
-    nonce_pattern: 'N[a-zA-Z]+'
-    key_pattern: '[Kk][a-zA-Z]+'
-
-  # If true, log every extraction step to logs/extraction.log
-  verbose_logging: true
-
-# ── Preprocessing ──────────────────────────────────────────
-preprocessing:
-  # Participant name normalization map
-  # Maps common variants to a standard label
-  participant_normalization:
-    "Alice": "A"
-    "Bob": "B"
-    "Server": "S"
-    "Initiator": "I"
-    "Responder": "R"
-    "Trusted Third Party": "TTP"
-    "Certificate Authority": "CA"
-    "Intruder": "E"         # Dolev-Yao attacker
-    "Malory": "E"
-    "Eve": "E"
-
-  # Symbols to normalize in equations
-  symbol_normalization:
-    "⊕": "XOR"
-    "‖": "CONCAT"
-    "||": "CONCAT"
-    "·": "CONCAT"
-    "∥": "CONCAT"
-    "^": "EXP"
-
-  # Message sequence encoding
-  max_message_steps: 20        # Support up to 20 protocol steps
-  pad_shorter_sequences: true
-  padding_token: "PAD"
-
-# ── Train/Val/Test Split ───────────────────────────────────
-splits:
-  strategy: "paper_id"           # IMPORTANT: split by paper, not by row
-  train_ratio: 0.70
-  val_ratio: 0.15
-  test_ratio: 0.15
-  random_seed: 42
-
-# ── ML Models ──────────────────────────────────────────────
-models:
-  # Baseline (Phase 3)
-  baseline:
-    binary:
-      type: "logistic_regression"
-      vectorizer: "tfidf"
-      max_features: 5000
-      ngram_range: [1, 2]
-      solver: "lbfgs"
-      max_iter: 1000
-      class_weight: "balanced"   # Handle class imbalance
-
-    multiclass:
-      type: "random_forest"
-      vectorizer: "tfidf"
-      max_features: 5000
-      ngram_range: [1, 2]
-      n_estimators: 100
-      class_weight: "balanced"
-      random_state: 42
-
-  # Improved model (Phase 3B)
-  improved:
-    embedding_model: "all-MiniLM-L6-v2"   # CPU-friendly sentence transformer
-    classifier: "svm"
-    kernel: "rbf"
-    class_weight: "balanced"
-
-  # Evaluation settings
-  evaluation:
-    primary_metric: "f1_weighted"
-    report_metrics:
-      - "accuracy"
-      - "precision_macro"
-      - "recall_macro"
-      - "f1_macro"
-      - "f1_weighted"
-    generate_confusion_matrix: true
-    generate_roc_curve: true
-    generate_pr_curve: true
-
-# ── Scyther ────────────────────────────────────────────────
-scyther:
-  installed: false                 # Set to true after installing Scyther
-  executable_path: null            # Set to full path when installed
-  # Example: "C:/Program Files/Scyther/scyther-w32.exe"
-  timeout_seconds: 30
-  output_format: "text"
-  spdl_output_dir: "scyther/models"
-  attack_trace_dir: "scyther/attack_traces"
-
-  # Supported claim types
-  claim_types:
-    - "Secret"
-    - "Nisynch"
-    - "Niagree"
-    - "Alive"
-    - "Weakagree"
+    - "None"
 
 # ── API ────────────────────────────────────────────────────
 api:
-  host: "127.0.0.1"
-  port: 8000
-  debug: true
+  host:           "127.0.0.1"
+  port:           8000
+  debug:          true
   cors_origins:
-    - "http://localhost:8501"      # Streamlit default port
+    - "http://localhost:8501"      # Streamlit default
+
+  # Endpoints (documented here for reference)
+  endpoints:
+    verify:       "POST /verify"   # main: protocol JSON → full report
+    explain:      "POST /explain"  # attack trace → English (LLM)
+    pqc_check:    "POST /pqc"      # primitives list → PQC report
+    health:       "GET  /health"   # service health check
 
 # ── Frontend ───────────────────────────────────────────────
 frontend:
-  port: 8501
-  title: "Cryptographic Protocol Analyzer"
-  page_icon: "🔐"
+  port:           8501
+  title:          "QuantumScyther AI"
+  page_icon:      "⚛️"
+  layout:         "wide"
+
+  # Report sections to display
+  show_sections:
+    - verification_result         # ATTACK FOUND / SECURE
+    - attack_trace                # step-by-step trace from engine
+    - plain_english_explanation   # LLM-generated
+    - pqc_analysis                # post-quantum flagging
+    - protocol_diagram            # Mermaid.js sequence diagram
 
 # ── Logging ────────────────────────────────────────────────
 logging:
-  level: "INFO"                    # DEBUG | INFO | WARNING | ERROR
-  log_dir: "logs"
-  log_file: "logs/app.log"
-  max_bytes: 10485760              # 10 MB
-  backup_count: 3
+  level:          "INFO"           # DEBUG | INFO | WARNING | ERROR
+  log_dir:        "logs"
+  log_file:       "logs/app.log"
+  max_bytes:      10485760         # 10 MB
+  backup_count:   3
 
-# ── Anti-Fabrication Guards ────────────────────────────────
-# These flags control validation behavior
+# ── Validation / Anti-Fabrication ──────────────────────────
 validation:
-  require_source_page: true        # Reject rows without a source page number
-  require_paper_id: true
-  require_protocol_name: true
-  warn_on_unknown_fields: true
-  block_on_fabrication_markers:    # Reject rows containing these strings
+  require_source_page:        true
+  require_paper_id:           true
+  require_protocol_name:      true
+  warn_on_unknown_fields:     true
+  unknown_marker:             "UNKNOWN"
+  review_marker:              "REQUIRES_MANUAL_VERIFICATION"
+  block_on_fabrication_markers:
     - "FABRICATED"
     - "INVENTED"
     - "MADE_UP"
-  unknown_marker: "UNKNOWN"
-  review_marker: "REQUIRES_MANUAL_VERIFICATION"
