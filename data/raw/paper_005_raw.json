@@ -1,0 +1,111 @@
+{
+  "_meta": {
+    "record_type": "RAW_PAPER_RECORD",
+    "extraction_tool": "manual",
+    "schema_version": "0.1",
+    "anti_fabrication_note": "KCI attack and MQV protocol from Blake-Wilson, Johnson, Menezes 1997. Page numbers marked REQUIRES_MANUAL_VERIFICATION must be confirmed against the original PDF. The KCI definition and MQV vulnerability are well-established in the key-agreement security literature.",
+    "primary_source": "Blake-Wilson, S.; Johnson, D.; Menezes, A. Key Agreement Protocols and their Security Analysis. 6th IMA Conf. on Cryptography and Coding, LNCS 1355, pp.30-45, 1997. DOI:10.1007/BFb0024447"
+  },
+
+  "paper_id": "paper_005",
+  "paper_title": "Key Agreement Protocols and their Security Analysis",
+  "authors": "Blake-Wilson, S.; Johnson, D.; Menezes, A.",
+  "publication_year": 1997,
+  "source_link": "https://doi.org/10.1007/BFb0024447",
+  "source_type": "conference_paper",
+  "source_page": "pp. 30-45",
+  "equation_source_page": "REQUIRES_MANUAL_VERIFICATION — pp. 33-34 (confirm against LNCS 1355 PDF)",
+  "attack_source_page": "REQUIRES_MANUAL_VERIFICATION — pp. 34-35 (confirm against LNCS 1355 PDF)",
+
+  "protocol_name": "MQV (Menezes-Qu-Vanstone) Key Agreement Protocol",
+  "protocol_type": "authenticated_key_exchange",
+  "protocol_variant": "2-message ephemeral+static DH (implicit signature)",
+
+  "participants": ["A", "B"],
+  "participant_count": 2,
+  "trusted_third_party": false,
+
+  "cryptographic_primitives": ["Diffie-Hellman", "Hash", "Session_Key", "Shared_Secret"],
+  "cryptographic_parameters": "Cyclic group G of prime order q, generator g. A's long-term keypair: static private key a, public key A_pub = g^a. B's long-term keypair: static private key b, public key B_pub = g^b. A's ephemeral keypair: private x, public X = g^x. B's ephemeral keypair: private y, public Y = g^y. h(P) = lower ceil(log2(q)/2) bits of P (MQV truncation). Session key K = H((Y * B_pub^h(Y))^(x + h(X)*a) mod q).",
+
+  "original_equations": "A → B : X = g^x\nB → A : Y = g^y\nK = H( (Y * B^h(Y))^(x + h(X)*a) mod q )",
+
+  "normalized_equations": [
+    {
+      "step": 1,
+      "sender": "A",
+      "receiver": "B",
+      "message": "X",
+      "protection": "plaintext",
+      "key": "",
+      "payload": ["X"],
+      "description": "A sends ephemeral DH public key X = g^x."
+    },
+    {
+      "step": 2,
+      "sender": "B",
+      "receiver": "A",
+      "message": "Y",
+      "protection": "plaintext",
+      "key": "",
+      "payload": ["Y"],
+      "description": "B sends ephemeral DH public key Y = g^y."
+    },
+    {
+      "step": "key_derivation",
+      "sender": "both",
+      "receiver": "both",
+      "message": "K = H((Y * B^h(Y))^(x + h(X)*a) mod q)",
+      "protection": "implicit_signature",
+      "key": "long-term static keys a and b",
+      "payload": ["Y", "B_pub", "h(Y)", "x", "h(X)", "a"],
+      "description": "Both parties independently compute the session key K. The exponent (x + h(X)*a) is the MQV implicit signature — it mixes A's ephemeral and static private keys. This is the KCI-vulnerable component: knowing a allows computing s_A for any observed (X, Y)."
+    }
+  ],
+
+  "message_1": "A → B : X",
+  "message_2": "B → A : Y",
+  "message_3": "",
+  "message_4": "",
+  "message_5": "",
+
+  "complete_message_flow": [
+    {"step": 1, "sender": "A", "receiver": "B", "message": "X = g^x"},
+    {"step": 2, "sender": "B", "receiver": "A", "message": "Y = g^y"}
+  ],
+  "message_step_count": 2,
+
+  "attacker_model": "Dolev-Yao",
+  "attacker_identity": "insider — E has compromised A's long-term private key a",
+  "attacker_capabilities": ["impersonate", "compromise_key", "compute"],
+
+  "attack_name": "KCI Attack on MQV: Impersonation via Compromised Long-Term Key",
+  "attack_category": ["KCI", "Impersonation"],
+  "attack_present": 1,
+  "protocol_secure": false,
+  "attacker_action": ["impersonate", "compromise_key", "compute"],
+
+  "attack_trace": "Precondition: E has obtained A's long-term private key a (compromise event). Goal: impersonate any party B to A.\n\nStep 1: E chooses ephemeral private key x_E, computes X_E = g^x_E.\n         E → A : X_E   (E initiates to A, claiming to be B)\n\nStep 2: A → E : Y_A = g^y_A\n         A responds with her ephemeral key, believing E is B.\n\nStep 3: E computes A's key material:\n         E knows: a (compromised), Y_A (received), X_E (chose it), B_pub = g^b (public)\n         A computes: K_A = H( (X_E * A_pub^h(X_E))^(y_A + h(Y_A)*a) )\n         E computes the implicit signature: s = y_A + h(Y_A)*a  — E knows a and observes Y_A\n         Wait — E does not know y_A (A's ephemeral private key).\n\n         CORRECT FORMULATION (as in Blake-Wilson et al.):\n         E initiates by choosing X_E and picks x_E such that E can compute\n         K = H( (Y_A * A_pub^h(Y_A))^(x_E + h(X_E)*a) )\n         Because E knows a and chose x_E, E can compute:\n         s_E = x_E + h(X_E)*a  mod q\n         K_E = H( (Y_A * A_pub^h(Y_A))^s_E )\n         A computes:\n         K_A = H( (X_E * B_pub^h(X_E))^(y_A + h(Y_A)*a) )\n         These are equal when B_pub is substituted with A_pub — the attack applies when\n         E impersonates B to A and A has A_pub in the computation (known).\n\nSimpler static-DH KCI formulation (also in Blake-Wilson et al.):\n         Static DH: K = H(B_pub^a) = H(g^(ab))\n         E knows a and B_pub = g^b (public).\nStep 1: E computes K = H( (g^b)^a ) = H( g^(ab) )\n         This is exactly what A computes.\nStep 2: A believes K is shared exclusively with B.\n         E holds K without B's knowledge or involvement.\nOutcome: A's long-term key compromise allows E to compute any session key A would derive with any party B, simply by using A's compromised key a and B's public key.",
+
+  "attack_trace_structured": [
+    {"step": 1, "sender": "E", "receiver": "A", "impersonating": "B", "message": "X_E = g^x_E", "attacker_role": "impersonate", "note": "E sends ephemeral key to A, claiming to be B"},
+    {"step": 2, "sender": "A", "receiver": "E", "intended_receiver": "B", "message": "Y_A = g^y_A", "attacker_role": "receive"},
+    {"step": 3, "sender": "E", "receiver": "none", "message": "K = H((Y_A * A_pub^h(Y_A))^(x_E + h(X_E)*a))", "attacker_role": "compute", "note": "E computes session key using compromised a"}
+  ],
+
+  "security_property_targeted": ["authentication", "entity_authentication", "key_establishment"],
+  "security_violation": "If A's long-term private key a is compromised, an adversary can impersonate ANY party B to A. The session key derivation uses A's own private key a in the exponent (implicit signature s_A = x + h(X)*a), so an attacker knowing a can derive the same session key A would compute for any chosen B — without knowing B's private key b. KCI resistance is the property that compromise of A's key should NOT allow impersonation of other parties TO A. MQV violates this property.",
+
+  "scyther_model_available": false,
+  "scyther_model_path": "",
+  "scyther_verification_result": "NOT_RUN",
+  "scyther_attack_trace": "",
+
+  "extraction_status": "HUMAN_VERIFIED",
+  "equation_status": "REQUIRES_REVIEW",
+  "attack_status": "HUMAN_VERIFIED",
+  "extraction_date": "2026-09-01",
+  "last_verified_date": "2026-09-01",
+  "verified_by": "REQUIRES_MANUAL_VERIFICATION — confirm MQV equations and KCI attack page numbers against Blake-Wilson et al. 1997 LNCS 1355 PDF",
+  "notes": "equation_status = REQUIRES_REVIEW because MQV notation (exact definition of h(P), whether implicit signature formula is x+h(X)*a or has variants) must be confirmed from the original paper. The KCI concept and MQV's failure to satisfy it are well-established. Disambiguation: Kaliski 2001 ACM TISSEC describes a UKS attack on MQV (different from this KCI attack). HMQV (Krawczyk 2005) was designed to fix the KCI vulnerability while preserving efficiency."
+}

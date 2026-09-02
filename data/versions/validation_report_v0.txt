@@ -1,0 +1,6 @@
+Dataset Validation Report — v0
+Generated: 2026-09-02
+
+File: paper_004_raw.json
+  - 'participant_count' (2) does not match len(participants) (3).
+

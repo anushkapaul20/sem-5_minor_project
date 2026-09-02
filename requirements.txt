@@ -1,0 +1,89 @@
+# ============================================================
+# Cryptographic Protocol Attack Detection System
+# requirements.txt
+#
+# All packages pinned to tested versions.
+# Python version: 3.13.0
+#
+# Install with:
+#   pip install -r requirements.txt
+#
+# NOTE: PyTorch is listed as CPU-only (no CUDA).
+# If you have a GPU, replace the torch line with the
+# appropriate CUDA build from https://pytorch.org/
+# ============================================================
+
+# ── Core Data Science ──────────────────────────────────────
+numpy==2.2.2
+pandas==2.2.3
+scipy==1.15.1
+scikit-learn==1.6.1
+
+# ── Deep Learning (CPU) ────────────────────────────────────
+torch==2.10.0
+torchvision==0.25.0
+
+# ── NLP / Transformers ─────────────────────────────────────
+transformers==5.3.0
+sentence-transformers==5.3.0
+tokenizers==0.22.2
+safetensors==0.7.0
+tiktoken==0.12.0
+
+# ── PDF Processing ─────────────────────────────────────────
+pypdf==6.13.3
+
+# ── Visualization ──────────────────────────────────────────
+matplotlib==3.10.0
+# seaborn — not yet installed, add when needed for heatmaps
+# plotly — not yet installed, add when needed for interactive charts
+
+# ── Web / API ──────────────────────────────────────────────
+fastapi==0.135.1
+uvicorn==0.41.0
+starlette==0.52.1
+pydantic==2.12.5
+pydantic-settings==2.13.1
+python-multipart==0.0.22
+
+# ── Frontend ───────────────────────────────────────────────
+streamlit==1.56.0
+
+# ── HTTP Clients ───────────────────────────────────────────
+requests==2.32.5
+httpx==0.28.1
+
+# ── File Formats ───────────────────────────────────────────
+PyYAML==6.0.3
+openpyxl==3.1.5          # For dataset_review.xlsx
+jsonschema==4.26.0
+
+# ── Testing ────────────────────────────────────────────────
+pytest==9.0.3
+pytest-cov==7.1.0
+
+# ── Utilities ──────────────────────────────────────────────
+tqdm==4.67.3
+python-dotenv==1.2.2
+rich==14.3.3              # Pretty terminal output
+colorama==0.4.6
+regex==2026.2.28
+sympy==1.14.0             # Symbolic math (useful for equation normalization)
+
+# ── Cryptography (for crypto primitive handling) ───────────
+cryptography==48.0.0
+pycryptodome==3.23.0
+
+# ── Jupyter (for notebooks/) ───────────────────────────────
+ipykernel==6.30.1
+ipython==9.5.0
+
+# ── Optional: Vector similarity search (for future phases) ─
+faiss-cpu==1.13.2
+
+# ── Not yet required (do not install until needed) ─────────
+# xgboost           — for boosted classifiers in Phase 3B
+# shap              — for ML explainability in Phase 6
+# spacy             — for NLP pipeline if needed in Phase 1B
+# nltk              — for NLP pipeline if needed in Phase 1B
+# networkx          — for attack graph visualization

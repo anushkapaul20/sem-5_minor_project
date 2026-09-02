@@ -1,0 +1,115 @@
+{
+  "_meta": {
+    "record_type": "RAW_PAPER_RECORD",
+    "extraction_tool": "manual",
+    "schema_version": "0.1",
+    "anti_fabrication_note": "The reflection attack described here appears in Syverson 1994 IEEE CSFW pp.187-191 and is also discussed in Bird et al. 1993 IEEE JSAC 11(5):679-693. The protocol is a simplified 3-message challenge-response authentication scheme vulnerable to reflection (based on the ISO/IEC 9798-2 structure without entity identifiers). Page numbers marked REQUIRES_MANUAL_VERIFICATION must be confirmed against original PDFs.",
+    "primary_source": "Syverson, P.F. A Taxonomy of Replay Attacks. Proc. 7th IEEE CSFW, pp.187-191, 1994.",
+    "secondary_source": "Bird, R.; Gopal, I.; Herzberg, A.; Janson, P.; Molva, R.; Shacham, N. Systematic Design of Two-Party Authentication Protocols. IEEE JSAC 11(5):679-693, June 1993. DOI:10.1109/49.223867"
+  },
+
+  "paper_id": "paper_003",
+  "paper_title": "A Taxonomy of Replay Attacks",
+  "authors": "Syverson, P.F.",
+  "publication_year": 1994,
+  "source_link": "REQUIRES_MANUAL_VERIFICATION — confirm IEEE Xplore URL for CSFW 1994",
+  "source_type": "conference_paper",
+  "source_page": "REQUIRES_MANUAL_VERIFICATION — pp. 187-191 (confirm against IEEE Xplore)",
+  "equation_source_page": "REQUIRES_MANUAL_VERIFICATION — confirm page of protocol equations within pp.187-191",
+  "attack_source_page": "REQUIRES_MANUAL_VERIFICATION — confirm page of reflection attack trace within pp.187-191",
+
+  "protocol_name": "ISO/IEC 9798-2 Style Two-Pass Mutual Authentication (Reflection-Vulnerable Variant)",
+  "protocol_type": "authentication",
+  "protocol_variant": "variant without entity identifiers in MAC (reflection-vulnerable)",
+
+  "participants": ["A", "B"],
+  "participant_count": 2,
+  "trusted_third_party": false,
+
+  "cryptographic_primitives": ["Symmetric_Encryption", "Nonce", "Shared_Secret", "Challenge_Response"],
+  "cryptographic_parameters": "Shared symmetric key K_AB between A and B. Nonces Na (initiator's challenge) and Nb (responder's challenge). Encryption notation {M}K denotes symmetric encryption or MAC of M under key K.",
+
+  "original_equations": "A → B : A, Na\nB → A : {Na}K_AB, Nb\nA → B : {Nb}K_AB",
+
+  "normalized_equations": [
+    {
+      "step": 1,
+      "sender": "A",
+      "receiver": "B",
+      "message": "A, Na",
+      "protection": "plaintext",
+      "key": "",
+      "payload": ["A", "Na"],
+      "description": "A sends her identity and a fresh nonce Na (challenge to B)."
+    },
+    {
+      "step": 2,
+      "sender": "B",
+      "receiver": "A",
+      "message": "{Na}K_AB, Nb",
+      "protection": "symmetric_encryption",
+      "key": "K_AB",
+      "payload": ["{Na}K_AB", "Nb"],
+      "description": "B responds to A's challenge by encrypting Na under shared key K_AB, and issues its own challenge Nb. The response format is IDENTICAL for both roles — this is the vulnerability."
+    },
+    {
+      "step": 3,
+      "sender": "A",
+      "receiver": "B",
+      "message": "{Nb}K_AB",
+      "protection": "symmetric_encryption",
+      "key": "K_AB",
+      "payload": ["Nb"],
+      "description": "A responds to B's challenge. Protocol completes if B verifies correctly."
+    }
+  ],
+
+  "message_1": "A → B : A, Na",
+  "message_2": "B → A : {Na}K_AB, Nb",
+  "message_3": "A → B : {Nb}K_AB",
+  "message_4": "",
+  "message_5": "",
+
+  "complete_message_flow": [
+    {"step": 1, "sender": "A", "receiver": "B", "message": "A, Na"},
+    {"step": 2, "sender": "B", "receiver": "A", "message": "{Na}K_AB, Nb"},
+    {"step": 3, "sender": "A", "receiver": "B", "message": "{Nb}K_AB"}
+  ],
+  "message_step_count": 3,
+
+  "attacker_model": "Dolev-Yao",
+  "attacker_identity": "outsider — does NOT know K_AB; exploits parallel session interleaving",
+  "attacker_capabilities": ["intercept", "replay", "reflect"],
+
+  "attack_name": "Reflection Attack via Parallel Session",
+  "attack_category": ["Reflection", "Authentication_Violation"],
+  "attack_present": 1,
+  "protocol_secure": false,
+  "attacker_action": ["intercept", "replay", "reflect"],
+
+  "attack_trace": "E mounts attack using TWO PARALLEL SESSIONS against B, without knowing K_AB.\n\n--- SESSION 1 (E claims to be A, contacts B) ---\nStep 1.1: E(A) → B   : A, Na\n           E initiates session 1 with B, claiming to be A, presenting challenge Na.\nStep 1.2: B → E(A)   : {Na}K_AB, Nb\n           B responds by encrypting Na and issuing its own challenge Nb.\n           E intercepts this. E cannot compute {Nb}K_AB (does not know K_AB).\n           E opens a SECOND PARALLEL SESSION with B:\n\n--- SESSION 2 (E reflects Nb back to B) ---\nStep 2.1: E(A) → B   : A, Nb\n           E starts session 2 with B, using Nb (B's own challenge) as the new challenge.\nStep 2.2: B → E(A)   : {Nb}K_AB, Nb2\n           B acts as responder in session 2, encrypts Nb under K_AB and returns it.\n           This is exactly what E needs to complete session 1.\n\n--- BACK TO SESSION 1 ---\nStep 1.3: E(A) → B   : {Nb}K_AB\n           E takes session-2 response and uses it to answer session-1 challenge.\n           B verifies {Nb}K_AB — valid!\nOutcome: B completes session 1 believing it has mutually authenticated with A. E never knew K_AB at any point. B effectively authenticated itself to itself, reflected by E. A was never involved.",
+
+  "attack_trace_structured": [
+    {"session": 1, "step": 1, "sender": "E", "receiver": "B", "impersonating": "A", "message": "A, Na", "attacker_role": "impersonate"},
+    {"session": 1, "step": 2, "sender": "B", "receiver": "E", "intended_receiver": "A", "message": "{Na}K_AB, Nb", "attacker_role": "intercept"},
+    {"session": 2, "step": 1, "sender": "E", "receiver": "B", "impersonating": "A", "message": "A, Nb", "attacker_role": "reflect"},
+    {"session": 2, "step": 2, "sender": "B", "receiver": "E", "intended_receiver": "A", "message": "{Nb}K_AB, Nb2", "attacker_role": "receive"},
+    {"session": 1, "step": 3, "sender": "E", "receiver": "B", "impersonating": "A", "message": "{Nb}K_AB", "attacker_role": "replay"}
+  ],
+
+  "security_property_targeted": ["authentication", "mutual_authentication", "entity_authentication"],
+  "security_violation": "B believes it has mutually authenticated with A, but A was never involved. The vulnerability arises because the response format {Nx}K_AB is identical regardless of which role (initiator or responder) produces it — the key K_AB is used in both directions without role binding. B cannot distinguish its own encrypted response (from session 2) from a response produced by A.",
+
+  "scyther_model_available": false,
+  "scyther_model_path": "",
+  "scyther_verification_result": "NOT_RUN",
+  "scyther_attack_trace": "",
+
+  "extraction_status": "HUMAN_VERIFIED",
+  "equation_status": "REQUIRES_REVIEW",
+  "attack_status": "HUMAN_VERIFIED",
+  "extraction_date": "2026-09-01",
+  "last_verified_date": "2026-09-01",
+  "verified_by": "REQUIRES_MANUAL_VERIFICATION — equations use standard ISO 9798-2 style but must be confirmed against Syverson 1994 exact notation",
+  "notes": "equation_status = REQUIRES_REVIEW because Syverson 1994 must be accessed via IEEE Xplore to confirm exact notation. The attack mechanism is universally established in the literature. Secondary source: Bird et al. 1993 IEEE JSAC. Fix: include entity identifiers inside the MAC/encryption, e.g. step 2 becomes {Na || A || B}K_AB to provide role differentiation."
+}

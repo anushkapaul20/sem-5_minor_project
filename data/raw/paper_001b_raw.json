@@ -1,0 +1,107 @@
+{
+  "_meta": {
+    "record_type": "RAW_PAPER_RECORD",
+    "extraction_tool": "manual",
+    "schema_version": "0.1",
+    "anti_fabrication_note": "This record represents the Lowe-fixed (NSL) protocol from the same 1996 paper. It is stored as a separate row because it is the SECURE variant — attack_present=0. Source: Lowe 1996 TACAS LNCS 1055 pp.147-166.",
+    "primary_source": "Lowe, G. Breaking and Fixing the Needham-Schroeder Public-Key Protocol Using FDR. TACAS 1996, LNCS 1055, pp.147-166. DOI:10.1007/3-540-61042-1_43"
+  },
+
+  "paper_id": "paper_001b",
+  "paper_title": "Breaking and Fixing the Needham-Schroeder Public-Key Protocol Using FDR",
+  "authors": "Lowe, G.",
+  "publication_year": 1996,
+  "source_link": "https://doi.org/10.1007/3-540-61042-1_43",
+  "source_type": "conference_paper",
+  "source_page": "pp. 147-166",
+  "equation_source_page": "REQUIRES_MANUAL_VERIFICATION — confirm page of fixed protocol within pp.147-166",
+  "attack_source_page": "N/A — this is the secure variant",
+
+  "protocol_name": "Needham-Schroeder-Lowe (NSL) Protocol",
+  "protocol_type": "authentication",
+  "protocol_variant": "Lowe-fixed (secure)",
+
+  "participants": ["A", "B"],
+  "participant_count": 2,
+  "trusted_third_party": false,
+
+  "cryptographic_primitives": ["Public_Key_Encryption", "Nonce"],
+  "cryptographic_parameters": "Same as NSPK. Fix: B's identity added to Message 2 payload.",
+
+  "original_equations": "A → B : {Na, A}Kb\nB → A : {Na, Nb, B}Ka\nA → B : {Nb}Kb",
+
+  "normalized_equations": [
+    {
+      "step": 1,
+      "sender": "A",
+      "receiver": "B",
+      "message": "{Na, A}Kb",
+      "protection": "public_key_encryption",
+      "key": "Kb",
+      "payload": ["Na", "A"],
+      "description": "Identical to original NSPK step 1."
+    },
+    {
+      "step": 2,
+      "sender": "B",
+      "receiver": "A",
+      "message": "{Na, Nb, B}Ka",
+      "protection": "public_key_encryption",
+      "key": "Ka",
+      "payload": ["Na", "Nb", "B"],
+      "description": "Lowe's fix: B's identity B added to the payload. A can now verify the responder's identity before completing."
+    },
+    {
+      "step": 3,
+      "sender": "A",
+      "receiver": "B",
+      "message": "{Nb}Kb",
+      "protection": "public_key_encryption",
+      "key": "Kb",
+      "payload": ["Nb"],
+      "description": "Same as original step 3."
+    }
+  ],
+
+  "message_1": "A → B : {Na, A}Kb",
+  "message_2": "B → A : {Na, Nb, B}Ka",
+  "message_3": "A → B : {Nb}Kb",
+  "message_4": "",
+  "message_5": "",
+
+  "complete_message_flow": [
+    {"step": 1, "sender": "A", "receiver": "B", "message": "{Na, A}Kb"},
+    {"step": 2, "sender": "B", "receiver": "A", "message": "{Na, Nb, B}Ka"},
+    {"step": 3, "sender": "A", "receiver": "B", "message": "{Nb}Kb"}
+  ],
+  "message_step_count": 3,
+
+  "attacker_model": "Dolev-Yao",
+  "attacker_identity": "N/A — protocol is secure against the Lowe MITM",
+  "attacker_capabilities": ["intercept", "forward", "impersonate"],
+
+  "attack_name": "None",
+  "attack_category": ["None"],
+  "attack_present": 0,
+  "protocol_secure": true,
+  "attacker_action": [],
+
+  "attack_trace": "",
+  "attack_trace_structured": [],
+
+  "security_property_targeted": [],
+  "security_violation": "None. Lowe's fix prevents the MITM: when A receives step 2, A sees B's identity inside the decrypted payload. If E tried to relay a step-2 message from a B-session into an A-session with E, A would see B's name (not E's name) and abort.",
+
+  "scyther_model_available": false,
+  "scyther_model_path": "",
+  "scyther_verification_result": "NOT_RUN",
+  "scyther_attack_trace": "",
+
+  "extraction_status": "HUMAN_VERIFIED",
+  "equation_status": "HUMAN_VERIFIED",
+  "attack_status": "HUMAN_VERIFIED",
+  "extraction_date": "2026-09-01",
+  "last_verified_date": "2026-09-01",
+  "verified_by": "REQUIRES_MANUAL_VERIFICATION — confirm fixed equation page against Lowe 1996 PDF",
+  "notes": "This is the positive/secure example for the NSPK protocol family. Paired with paper_001 (the vulnerable version). Stored separately to provide an attack_present=0 row for dataset balance."
+}

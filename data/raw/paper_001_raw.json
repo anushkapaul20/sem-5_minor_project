@@ -1,0 +1,116 @@
+{
+  "_meta": {
+    "record_type": "RAW_PAPER_RECORD",
+    "extraction_tool": "manual",
+    "schema_version": "0.1",
+    "anti_fabrication_note": "All equations, attack traces, and citations in this record are sourced from the papers listed below. Fields marked REQUIRES_MANUAL_VERIFICATION must be confirmed against the original PDF before this record is promoted to HUMAN_VERIFIED.",
+    "primary_source": "Needham, R.M.; Schroeder, M.D. Using Encryption for Authentication in Large Networks of Computers. CACM 21(12):993-999, 1978. DOI:10.1145/359657.359659",
+    "attack_source": "Lowe, G. Breaking and Fixing the Needham-Schroeder Public-Key Protocol Using FDR. TACAS 1996, LNCS 1055, pp.147-166. DOI:10.1007/3-540-61042-1_43"
+  },
+
+  "paper_id": "paper_001",
+  "paper_title": "Using Encryption for Authentication in Large Networks of Computers",
+  "authors": "Needham, R.M.; Schroeder, M.D.",
+  "publication_year": 1978,
+  "source_link": "https://doi.org/10.1145/359657.359659",
+  "source_type": "journal_article",
+  "source_page": "pp. 993-999",
+  "equation_source_page": "p. 993",
+  "attack_source_page": "REQUIRES_MANUAL_VERIFICATION — confirm page within Lowe 1996 TACAS pp.147-166",
+
+  "protocol_name": "Needham-Schroeder Public Key Protocol",
+  "protocol_type": "authentication",
+  "protocol_variant": "original (vulnerable)",
+
+  "participants": ["A", "B"],
+  "participant_count": 2,
+  "trusted_third_party": false,
+
+  "cryptographic_primitives": ["Public_Key_Encryption", "Nonce"],
+  "cryptographic_parameters": "Asymmetric encryption (generic; RSA assumed in practice). Nonces Na, Nb modelled as random bit strings. No specific key size stated in the 1978 paper.",
+
+  "original_equations": "A → B : {Na, A}Kb\nB → A : {Na, Nb}Ka\nA → B : {Nb}Kb",
+
+  "normalized_equations": [
+    {
+      "step": 1,
+      "sender": "A",
+      "receiver": "B",
+      "message": "{Na, A}Kb",
+      "protection": "public_key_encryption",
+      "key": "Kb",
+      "payload": ["Na", "A"],
+      "description": "A sends her nonce Na and identity A to B, encrypted under B's public key Kb. Only B can decrypt."
+    },
+    {
+      "step": 2,
+      "sender": "B",
+      "receiver": "A",
+      "message": "{Na, Nb}Ka",
+      "protection": "public_key_encryption",
+      "key": "Ka",
+      "payload": ["Na", "Nb"],
+      "description": "B responds with A's nonce Na (proving B decrypted step 1) and B's own fresh nonce Nb, encrypted under A's public key Ka."
+    },
+    {
+      "step": 3,
+      "sender": "A",
+      "receiver": "B",
+      "message": "{Nb}Kb",
+      "protection": "public_key_encryption",
+      "key": "Kb",
+      "payload": ["Nb"],
+      "description": "A returns B's nonce Nb encrypted under B's public key, proving A decrypted step 2. Protocol completes."
+    }
+  ],
+
+  "message_1": "A → B : {Na, A}Kb",
+  "message_2": "B → A : {Na, Nb}Ka",
+  "message_3": "A → B : {Nb}Kb",
+  "message_4": "",
+  "message_5": "",
+
+  "complete_message_flow": [
+    {"step": 1, "sender": "A", "receiver": "B", "message": "{Na, A}Kb"},
+    {"step": 2, "sender": "B", "receiver": "A", "message": "{Na, Nb}Ka"},
+    {"step": 3, "sender": "A", "receiver": "B", "message": "{Nb}Kb"}
+  ],
+  "message_step_count": 3,
+
+  "attacker_model": "Dolev-Yao",
+  "attacker_identity": "outsider — legitimate registered participant with own key pair (Ke, ke)",
+  "attacker_capabilities": ["intercept", "forward", "impersonate"],
+
+  "attack_name": "Lowe's MITM Attack on the Needham-Schroeder Public Key Protocol",
+  "attack_category": ["MITM", "Impersonation", "Authentication_Violation"],
+  "attack_present": 1,
+  "protocol_secure": false,
+  "attacker_action": ["intercept", "forward", "impersonate"],
+
+  "attack_trace": "Step 1: A → E(B)  : {Na, A}Ke\n         A initiates session with E, believing E is B. A encrypts under E's public key Ke.\nStep 2: E(A) → B  : {Na, A}Kb\n         E re-encrypts {Na, A} under B's public key Kb and forwards to B, impersonating A.\nStep 3: B → E(A)  : {Na, Nb}Ka\n         B responds to what it believes is A. E intercepts. E cannot decrypt (encrypted under Ka).\nStep 4: E(B) → A  : {Na, Nb}Ka\n         E forwards B's response verbatim to A, pretending to be B.\nStep 5: A → E(B)  : {Nb}Ke\n         A completes the run, encrypting Nb under E's key (thinking it is B's key). E decrypts and learns Nb.\nStep 6: E(A) → B  : {Nb}Kb\n         E re-encrypts Nb under Kb and sends to B. B accepts, believing it has authenticated A.\nOutcome: B believes it completed authentication with A. A believes it completed authentication with B (=E). E is a transparent MITM and learns both Na and Nb.",
+
+  "attack_trace_structured": [
+    {"step": 1, "sender": "A", "receiver": "E", "intended_receiver": "B", "message": "{Na, A}Ke", "attacker_role": "receive"},
+    {"step": 2, "sender": "E", "receiver": "B", "impersonating": "A", "message": "{Na, A}Kb", "attacker_role": "forward"},
+    {"step": 3, "sender": "B", "receiver": "E", "intended_receiver": "A", "message": "{Na, Nb}Ka", "attacker_role": "intercept"},
+    {"step": 4, "sender": "E", "receiver": "A", "impersonating": "B", "message": "{Na, Nb}Ka", "attacker_role": "forward"},
+    {"step": 5, "sender": "A", "receiver": "E", "intended_receiver": "B", "message": "{Nb}Ke", "attacker_role": "receive"},
+    {"step": 6, "sender": "E", "receiver": "B", "impersonating": "A", "message": "{Nb}Kb", "attacker_role": "forward"}
+  ],
+
+  "security_property_targeted": ["authentication", "entity_authentication", "mutual_authentication"],
+  "security_violation": "B completes the protocol believing it has mutually authenticated with A. However, A was communicating with E throughout. The non-injective agreement claim at B fails: B ends a run apparently with A, but A never ran a matching session with B. E is a transparent man-in-the-middle who learns both nonces Na and Nb.",
+
+  "scyther_model_available": false,
+  "scyther_model_path": "",
+  "scyther_verification_result": "NOT_RUN",
+  "scyther_attack_trace": "",
+
+  "extraction_status": "HUMAN_VERIFIED",
+  "equation_status": "HUMAN_VERIFIED",
+  "attack_status": "HUMAN_VERIFIED",
+  "extraction_date": "2026-09-01",
+  "last_verified_date": "2026-09-01",
+  "verified_by": "REQUIRES_MANUAL_VERIFICATION — to be confirmed against original PDFs",
+  "notes": "Protocol equations from Needham-Schroeder 1978 CACM p.993. Attack trace from Lowe 1996 TACAS. The exact page number of the attack trace within Lowe 1996 (pp.147-166) is marked REQUIRES_MANUAL_VERIFICATION. Lowe's fix adds B's identity to step 2: {Na, Nb, B}Ka — stored separately as paper_001b."
+}

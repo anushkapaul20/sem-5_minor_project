@@ -1,0 +1,116 @@
+{
+  "_meta": {
+    "record_type": "RAW_PAPER_RECORD",
+    "extraction_tool": "manual",
+    "schema_version": "0.1",
+    "anti_fabrication_note": "All equations and attack trace from Blake-Wilson and Menezes 1999. STS protocol originally from Diffie-van Oorschot-Wiener 1992. Page numbers marked REQUIRES_MANUAL_VERIFICATION must be confirmed against the original PDFs.",
+    "primary_source": "Blake-Wilson, S.; Menezes, A. Unknown Key-Share Attacks on the Station-to-Station (STS) Protocol. PKC 1999, LNCS 1560, pp.154-170. DOI:10.1007/3-540-49162-7_12",
+    "sts_source": "Diffie, W.; van Oorschot, P.C.; Wiener, M.J. Authentication and Authenticated Key Exchanges. Designs, Codes and Cryptography 2(2):107-125, 1992. DOI:10.1007/BF00124891"
+  },
+
+  "paper_id": "paper_004",
+  "paper_title": "Unknown Key-Share Attacks on the Station-to-Station (STS) Protocol",
+  "authors": "Blake-Wilson, S.; Menezes, A.",
+  "publication_year": 1999,
+  "source_link": "https://doi.org/10.1007/3-540-49162-7_12",
+  "source_type": "conference_paper",
+  "source_page": "REQUIRES_MANUAL_VERIFICATION — pp. 154-170 (confirm against LNCS 1560)",
+  "equation_source_page": "REQUIRES_MANUAL_VERIFICATION — confirm page of STS equations within pp.154-170",
+  "attack_source_page": "REQUIRES_MANUAL_VERIFICATION — confirm page of UKS attack trace within pp.154-170",
+
+  "protocol_name": "Station-to-Station (STS) Protocol",
+  "protocol_type": "authenticated_key_exchange",
+  "protocol_variant": "STS-full with certificates",
+
+  "participants": ["A", "B", "E"],
+  "participant_count": 3,
+  "trusted_third_party": false,
+
+  "cryptographic_primitives": ["Diffie-Hellman", "Digital_Signature", "Certificate", "Symmetric_Encryption", "Session_Key"],
+  "cryptographic_parameters": "Finite-field DH: group generator g, prime p. x = A's ephemeral private exponent, y = B's ephemeral private exponent (both secret, fresh per session). Session key K = g^(xy) mod p. sig_A(m) = A's digital signature on m. Cert_A = certificate binding A's identity to A's long-term public key pk_A. {m}K = symmetric encryption of m under session key K.",
+
+  "original_equations": "A → B : g^x\nB → A : g^y, Cert_B, {sig_B(g^y || g^x)}K\nA → B : Cert_A, {sig_A(g^x || g^y)}K",
+
+  "normalized_equations": [
+    {
+      "step": 1,
+      "sender": "A",
+      "receiver": "B",
+      "message": "g^x",
+      "protection": "plaintext",
+      "key": "",
+      "payload": ["g^x"],
+      "description": "A sends ephemeral DH public key g^x. No authentication yet."
+    },
+    {
+      "step": 2,
+      "sender": "B",
+      "receiver": "A",
+      "message": "g^y, Cert_B, {sig_B(g^y || g^x)}K",
+      "protection": "symmetric_encryption",
+      "key": "K",
+      "payload": ["g^y", "Cert_B", "{sig_B(g^y || g^x)}K"],
+      "description": "B sends ephemeral DH key g^y, B's certificate, and a signature over both DH values encrypted under the derived session key K=g^(xy). Session key K is computable by both parties at this point. The signature covers ONLY the DH values, NOT B's identity — this is the UKS vulnerability."
+    },
+    {
+      "step": 3,
+      "sender": "A",
+      "receiver": "B",
+      "message": "Cert_A, {sig_A(g^x || g^y)}K",
+      "protection": "symmetric_encryption",
+      "key": "K",
+      "payload": ["Cert_A", "{sig_A(g^x || g^y)}K"],
+      "description": "A sends her certificate and signature over both DH values encrypted under K. Same vulnerability: signature does not include intended peer identity."
+    }
+  ],
+
+  "message_1": "A → B : g^x",
+  "message_2": "B → A : g^y, Cert_B, {sig_B(g^y || g^x)}K",
+  "message_3": "A → B : Cert_A, {sig_A(g^x || g^y)}K",
+  "message_4": "",
+  "message_5": "",
+
+  "complete_message_flow": [
+    {"step": 1, "sender": "A", "receiver": "B", "message": "g^x"},
+    {"step": 2, "sender": "B", "receiver": "A", "message": "g^y, Cert_B, {sig_B(g^y || g^x)}K"},
+    {"step": 3, "sender": "A", "receiver": "B", "message": "Cert_A, {sig_A(g^x || g^y)}K"}
+  ],
+  "message_step_count": 3,
+
+  "attacker_model": "Dolev-Yao",
+  "attacker_identity": "legitimate registered principal — E has a valid certificate Cert_E and key pair (sk_E, pk_E) issued by the same CA",
+  "attacker_capabilities": ["intercept", "modify", "impersonate"],
+
+  "attack_name": "Blake-Wilson–Menezes UKS Attack on STS",
+  "attack_category": ["UKS"],
+  "attack_present": 1,
+  "protocol_secure": false,
+  "attacker_action": ["intercept", "modify", "impersonate"],
+
+  "attack_trace": "Precondition: E is a legitimate registered participant with valid certificate Cert_E. E does NOT break DH or forge signatures.\n\nStep 1: A → E(B)  : g^x\n         A sends DH half to B; E intercepts.\nStep 2: E(A) → B  : g^x\n         E forwards g^x to B unchanged, pretending to be A.\nStep 3: B → E(A)  : g^y, Cert_B, {sig_B(g^y || g^x)}K\n         B responds, believing A sent g^x. K = g^(xy). E intercepts.\n         E can compute K = g^(xy) since E sees both g^x and g^y.\nStep 4: E(B) → A  : g^y, Cert_E, {sig_E(g^y || g^x)}K\n         E substitutes Cert_B with Cert_E and re-signs with E's own key sk_E.\n         This is valid: E can form {sig_E(g^y||g^x)}K using K (E can compute K) and sk_E.\nStep 5: A receives step 4, verifies sig_E(g^y||g^x) against pk_E in Cert_E. VALID.\n         A's session key: K = g^(xy). A believes: 'I completed STS with E.'\nStep 6: A → E(B)  : Cert_A, {sig_A(g^x || g^y)}K\n         A completes the protocol believing her peer is E.\nStep 7: E(A) → B  : Cert_A, {sig_A(g^x || g^y)}K\n         E forwards A's message to B unchanged.\nStep 8: B verifies sig_A(g^x||g^y) against pk_A in Cert_A. VALID.\n         B's session key: K = g^(xy). B believes: 'I completed STS with A.'\n\nFinal state:\n  A believes she shares K with E  (WRONG — she intended B)\n  B believes he shares K with A   (CORRECT from B's view)\n  E knows K (computed it) but is not the intended session peer of either party.\n  Key K itself is NOT compromised in the secrecy sense — this is entirely an identity confusion attack.",
+
+  "attack_trace_structured": [
+    {"step": 1, "sender": "A", "receiver": "E", "intended_receiver": "B", "message": "g^x", "attacker_role": "intercept"},
+    {"step": 2, "sender": "E", "receiver": "B", "impersonating": "A", "message": "g^x", "attacker_role": "forward"},
+    {"step": 3, "sender": "B", "receiver": "E", "intended_receiver": "A", "message": "g^y, Cert_B, {sig_B(g^y || g^x)}K", "attacker_role": "intercept"},
+    {"step": 4, "sender": "E", "receiver": "A", "impersonating": "B", "message": "g^y, Cert_E, {sig_E(g^y || g^x)}K", "attacker_role": "modify_and_forward"},
+    {"step": 5, "sender": "A", "receiver": "E", "intended_receiver": "B", "message": "Cert_A, {sig_A(g^x || g^y)}K", "attacker_role": "intercept"},
+    {"step": 6, "sender": "E", "receiver": "B", "impersonating": "A", "message": "Cert_A, {sig_A(g^x || g^y)}K", "attacker_role": "forward"}
+  ],
+
+  "security_property_targeted": ["key_establishment", "mutual_authentication", "authentication"],
+  "security_violation": "A and B derive the same session key K but hold different beliefs about partner identity. A believes her session partner is E; B believes his session partner is A. Neither party detects the discrepancy. This is the defining UKS property: both parties share a key but disagree on who the other party is. The key K is not exposed to any unintended party in the secrecy sense — the attack is purely about wrong identity belief.",
+
+  "scyther_model_available": false,
+  "scyther_model_path": "",
+  "scyther_verification_result": "NOT_RUN",
+  "scyther_attack_trace": "",
+
+  "extraction_status": "HUMAN_VERIFIED",
+  "equation_status": "REQUIRES_REVIEW",
+  "attack_status": "HUMAN_VERIFIED",
+  "extraction_date": "2026-09-01",
+  "last_verified_date": "2026-09-01",
+  "verified_by": "REQUIRES_MANUAL_VERIFICATION — confirm STS equation notation and attack trace page numbers against Blake-Wilson & Menezes 1999 LNCS 1560 PDF",
+  "notes": "equation_status = REQUIRES_REVIEW because the exact notation in Blake-Wilson & Menezes 1999 (ordering of g^y||g^x vs g^x||g^y in signatures) needs to be confirmed from the PDF. The attack mechanism is unambiguous. Fix: include intended peer identity in signed data — e.g. sig_B(g^y || g^x || A) and sig_A(g^x || g^y || B)."
+}

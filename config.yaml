@@ -1,0 +1,273 @@
+# ============================================================
+# config.yaml
+# Master configuration for the Cryptographic Protocol
+# Attack Detection System.
+#
+# All paths are relative to the project root unless noted.
+# Override any value by creating a config.local.yaml
+# (gitignored) in the same directory.
+# ============================================================
+
+project:
+  name: "Cryptographic Protocol Attack Detection"
+  version: "0.1"
+  phase: 0                        # Current active phase (0–6)
+  description: "B.Tech Minor Project: ML + formal verification for cryptographic protocol security analysis"
+
+# ── Paths ──────────────────────────────────────────────────
+paths:
+  data_root: "data"
+  raw: "data/raw"
+  processed: "data/processed"
+  annotations: "data/annotations"
+  splits: "data/splits"
+  versions: "data/versions"
+  papers_root: "papers"
+  paper_metadata: "papers/metadata"
+  paper_sources: "papers/sources"
+  extraction: "extraction"
+  preprocessing: "preprocessing"
+  models_root: "models"
+  saved_models: "models/saved_models"
+  scyther_root: "scyther"
+  scyther_models: "scyther/models"
+  scyther_traces: "scyther/attack_traces"
+  notebooks: "notebooks"
+  tests: "tests"
+  docs: "docs"
+  logs: "logs"
+
+# ── Dataset ────────────────────────────────────────────────
+dataset:
+  current_version: "v0"
+  base_filename: "dataset"           # Results in dataset_v0.csv, dataset_v1.csv, etc.
+  formats:
+    - "csv"
+    - "json"
+    - "xlsx"                         # For human review only
+  encoding: "utf-8"
+  separator: ","
+
+  # Fields that must be present and non-null for a row to be valid
+  required_fields:
+    - "paper_id"
+    - "paper_title"
+    - "protocol_name"
+    - "attack_present"
+    - "extraction_status"
+
+  # Fields whose values must come from a controlled vocabulary
+  controlled_vocab_fields:
+    - "attack_category"
+    - "extraction_status"
+    - "source_type"
+
+# ── Attack Taxonomy ────────────────────────────────────────
+attacks:
+  categories:
+    - "MITM"
+    - "Replay"
+    - "Reflection"
+    - "Impersonation"
+    - "UKS"
+    - "Secrecy_Violation"
+    - "Authentication_Violation"
+    - "Session_Key_Compromise"
+    - "KCI"
+    - "Forward_Secrecy_Violation"
+    - "None"                          # Used when no attack is present
+
+  # For binary classification
+  binary_label_field: "attack_present"
+  binary_positive: 1                  # Attack present
+  binary_negative: 0                  # No attack (secure protocol)
+
+  # For multi-label: a protocol can have multiple attack categories
+  multi_label: true
+
+# ── Cryptographic Primitives (controlled vocabulary) ───────
+primitives:
+  categories:
+    - "RSA"
+    - "Diffie-Hellman"
+    - "ECDH"
+    - "ECC"
+    - "AES"
+    - "DES"
+    - "3DES"
+    - "Hash"
+    - "HMAC"
+    - "MAC"
+    - "Digital_Signature"
+    - "Public_Key_Encryption"
+    - "Symmetric_Encryption"
+    - "Nonce"
+    - "Timestamp"
+    - "Password"
+    - "Shared_Secret"
+    - "Session_Key"
+    - "Certificate"
+    - "Challenge_Response"
+
+# ── Extraction Pipeline ────────────────────────────────────
+extraction:
+  # Possible values for extraction_status field
+  status_values:
+    - "AUTO_EXTRACTED"
+    - "HUMAN_VERIFIED"
+    - "REQUIRES_REVIEW"
+
+  # Possible values for source_type field
+  source_types:
+    - "conference_paper"
+    - "journal_article"
+    - "thesis"
+    - "technical_report"
+    - "textbook"
+    - "rfc"
+    - "standard"
+
+  # Equation detection regex patterns (used in equation_extractor.py)
+  equation_patterns:
+    arrow_notation: '([A-Z][a-z]?)\s*→\s*([A-Z][a-z]?)\s*:\s*(.+)'
+    encrypted_msg: '\{[^}]+\}_?\w+'
+    hash_expr: 'H\s*\([^)]+\)'
+    nonce_pattern: 'N[a-zA-Z]+'
+    key_pattern: '[Kk][a-zA-Z]+'
+
+  # If true, log every extraction step to logs/extraction.log
+  verbose_logging: true
+
+# ── Preprocessing ──────────────────────────────────────────
+preprocessing:
+  # Participant name normalization map
+  # Maps common variants to a standard label
+  participant_normalization:
+    "Alice": "A"
+    "Bob": "B"
+    "Server": "S"
+    "Initiator": "I"
+    "Responder": "R"
+    "Trusted Third Party": "TTP"
+    "Certificate Authority": "CA"
+    "Intruder": "E"         # Dolev-Yao attacker
+    "Malory": "E"
+    "Eve": "E"
+
+  # Symbols to normalize in equations
+  symbol_normalization:
+    "⊕": "XOR"
+    "‖": "CONCAT"
+    "||": "CONCAT"
+    "·": "CONCAT"
+    "∥": "CONCAT"
+    "^": "EXP"
+
+  # Message sequence encoding
+  max_message_steps: 20        # Support up to 20 protocol steps
+  pad_shorter_sequences: true
+  padding_token: "PAD"
+
+# ── Train/Val/Test Split ───────────────────────────────────
+splits:
+  strategy: "paper_id"           # IMPORTANT: split by paper, not by row
+  train_ratio: 0.70
+  val_ratio: 0.15
+  test_ratio: 0.15
+  random_seed: 42
+
+# ── ML Models ──────────────────────────────────────────────
+models:
+  # Baseline (Phase 3)
+  baseline:
+    binary:
+      type: "logistic_regression"
+      vectorizer: "tfidf"
+      max_features: 5000
+      ngram_range: [1, 2]
+      solver: "lbfgs"
+      max_iter: 1000
+      class_weight: "balanced"   # Handle class imbalance
+
+    multiclass:
+      type: "random_forest"
+      vectorizer: "tfidf"
+      max_features: 5000
+      ngram_range: [1, 2]
+      n_estimators: 100
+      class_weight: "balanced"
+      random_state: 42
+
+  # Improved model (Phase 3B)
+  improved:
+    embedding_model: "all-MiniLM-L6-v2"   # CPU-friendly sentence transformer
+    classifier: "svm"
+    kernel: "rbf"
+    class_weight: "balanced"
+
+  # Evaluation settings
+  evaluation:
+    primary_metric: "f1_weighted"
+    report_metrics:
+      - "accuracy"
+      - "precision_macro"
+      - "recall_macro"
+      - "f1_macro"
+      - "f1_weighted"
+    generate_confusion_matrix: true
+    generate_roc_curve: true
+    generate_pr_curve: true
+
+# ── Scyther ────────────────────────────────────────────────
+scyther:
+  installed: false                 # Set to true after installing Scyther
+  executable_path: null            # Set to full path when installed
+  # Example: "C:/Program Files/Scyther/scyther-w32.exe"
+  timeout_seconds: 30
+  output_format: "text"
+  spdl_output_dir: "scyther/models"
+  attack_trace_dir: "scyther/attack_traces"
+
+  # Supported claim types
+  claim_types:
+    - "Secret"
+    - "Nisynch"
+    - "Niagree"
+    - "Alive"
+    - "Weakagree"
+
+# ── API ────────────────────────────────────────────────────
+api:
+  host: "127.0.0.1"
+  port: 8000
+  debug: true
+  cors_origins:
+    - "http://localhost:8501"      # Streamlit default port
+
+# ── Frontend ───────────────────────────────────────────────
+frontend:
+  port: 8501
+  title: "Cryptographic Protocol Analyzer"
+  page_icon: "🔐"
+
+# ── Logging ────────────────────────────────────────────────
+logging:
+  level: "INFO"                    # DEBUG | INFO | WARNING | ERROR
+  log_dir: "logs"
+  log_file: "logs/app.log"
+  max_bytes: 10485760              # 10 MB
+  backup_count: 3
+
+# ── Anti-Fabrication Guards ────────────────────────────────
+# These flags control validation behavior
+validation:
+  require_source_page: true        # Reject rows without a source page number
+  require_paper_id: true
+  require_protocol_name: true
+  warn_on_unknown_fields: true
+  block_on_fabrication_markers:    # Reject rows containing these strings
+    - "FABRICATED"
+    - "INVENTED"
+    - "MADE_UP"
+  unknown_marker: "UNKNOWN"
+  review_marker: "REQUIRES_MANUAL_VERIFICATION"
