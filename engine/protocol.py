@@ -236,34 +236,26 @@ class Session:
 class ProtocolState:
     """
     A complete snapshot of the protocol execution at one point in time.
-
-    The BFS explorer (explorer.py) maintains a queue of ProtocolStates
-    and transitions between them by executing one step at a time.
-
-    Parameters
-    ----------
-    sessions         : all currently running sessions
-    attacker         : attacker's current knowledge
-    sent_messages    : history of all messages sent in all sessions
-    completed_sessions : session IDs that have finished
-    attack_trace     : ordered list of (session_id, step, message) tuples
-                       that led to this state
     """
     sessions:            List[Session]             = field(default_factory=list)
     attacker:            AttackerKnowledge         = field(default_factory=AttackerKnowledge)
-    sent_messages:       List[Tuple[int, Message]] = field(default_factory=list)
+    sent_messages:       List[Tuple[int, "Message"]] = field(default_factory=list)
     completed_sessions:  Set[int]                  = field(default_factory=set)
     attack_trace:        List[str]                 = field(default_factory=list)
+    # Raw (session_id, is_send, term) history — populated by explorer
+    history:             List[Tuple[int, bool, "Term"]] = field(default_factory=list)
 
     def copy(self) -> "ProtocolState":
         """Deep copy for BFS branching."""
-        return ProtocolState(
+        ps = ProtocolState(
             sessions=[s.copy() for s in self.sessions],
             attacker=self.attacker.copy(),
             sent_messages=list(self.sent_messages),
             completed_sessions=set(self.completed_sessions),
             attack_trace=list(self.attack_trace),
+            history=list(self.history),
         )
+        return ps
 
     def session(self, session_id: int) -> Optional[Session]:
         for s in self.sessions:

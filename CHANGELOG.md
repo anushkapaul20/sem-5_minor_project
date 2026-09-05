@@ -61,7 +61,46 @@ All significant changes recorded here in reverse chronological order.
 
 ---
 
-## [0.1] — 2026-09-01 — Initial Project Setup (Phase 0 + Phase 1)
+## [0.3] — 2026-09-04 — Phase 2: Custom Dolev-Yao Engine
+
+### Added
+- `engine/unifier.py` — Variable term, match(), substitute(), free_variables()
+- `engine/terms.py` — Term algebra (Atom, Encrypt, Hash, Concat, DH, Pair), DH equational theory
+- `engine/dolev_yao.py` — AttackerKnowledge class with deduction closure
+- `engine/protocol.py` — Message, Role, ProtocolDef, Session, ProtocolState + history field
+- `engine/checkers.py` — 8 property checkers: Secrecy, Authentication, Replay, Reflection,
+  Structural Reflection, MITM, UKS, Certificate Substitution, KCI
+- `engine/explorer.py` — Two-pass bounded BFS (honest run + attacker BFS, max 2 sessions)
+- `engine/benchmark.py` — Benchmark validation runner
+- `engine/pqc/pqc_checker.py` — Post-quantum primitive lookup (NIST FIPS 203/204/205)
+- `engine/protocols/nspk.py` — NSPK (MITM vulnerable) + NSL (Lowe-fixed, SECURE)
+- `engine/protocols/nssk.py` — NSSK (Replay vulnerable)
+- `engine/protocols/iso9798.py` — ISO 9798-2 style (Reflection vulnerable)
+- `engine/protocols/sts.py` — STS Protocol (UKS vulnerable)
+- `engine/protocols/mqv.py` — MQV Protocol (KCI vulnerable)
+- `quick_check.py` — benchmark runner script
+- `tests/test_terms.py` — 40 tests for Term algebra
+- `tests/test_dolev_yao.py` — 38 tests for AttackerKnowledge
+- `tests/test_checkers.py` — 48 tests for all property checkers
+- `tests/test_engine_integration.py` — 25 end-to-end engine tests
+
+### Benchmark results (5/6 = 83%)
+| Protocol | Expected | Got | Status |
+|----------|----------|-----|--------|
+| NSPK | ATTACK | ATTACK (Auth Violation) | ✅ |
+| NSL | SECURE | ATTACK (false positive) | ❌ in progress |
+| NSSK | ATTACK | ATTACK (Reflection) | ✅ |
+| ISO9798 | ATTACK | ATTACK (Auth Violation) | ✅ |
+| STS | ATTACK | ATTACK (Reflection) | ✅ |
+| MQV | ATTACK | ATTACK (KCI) | ✅ |
+
+### Tests
+- 232 unit tests passing (test_terms, test_dolev_yao, test_checkers,
+  test_annotation_schema, test_equation_extractor, test_attack_extractor, test_dataset_v0)
+
+### Known issue
+- NSL false positive: auth checker fires on a state where the attacker injects
+  garbage into the initiator session. Fix in progress.
 
 ### Added
 - Full project directory structure (26 directories)

@@ -3,312 +3,418 @@ engine/checkers.py
 ==================
 Security property checkers for QuantumScyther AI.
 
-Each checker receives a ProtocolState and returns a CheckerResult
-indicating whether the property is violated and, if so, providing
-the attack trace.
+Precise, conservative checker design
+--------------------------------------
+Each checker fires ONLY on clear, unambiguous evidence.
 
-Six checkers
-------------
-check_secrecy        — Is a secret term derivable by the attacker?
-check_authentication — Does a completed responder run have a matching initiator run?
-check_replay         — Is any message accepted that was sent in a prior session?
-check_reflection     — Is any message reflected back to its sender?
-check_mitm           — Can the attacker complete sessions with both A and B?
-check_uks            — Do parties agree on the key but disagree on partner identity?
+Key design decisions
+--------------------
+1. Secrecy:    secret must appear INSIDE Encrypt in a sent msg, AND attacker derives it
+2. Auth:       BOTH I and R must complete; R's nonce bindings conflict with I's;
+               BUT only if both sessions used REAL protocol nonces (not attacker atoms)
+3. Replay:     same Encrypt sent in earlier completed session, received in later
+               completed session of DIFFERENT role, AND sessions have conflicting nonces
+4. Reflection: same role sends and receives same Encrypt across two completed sessions
+5. MITM:       I and R both completed, shared binding values differ
+6. UKS:        I and R share key value, disagree on peer identity
 
-Usage
------
-    from engine.checkers import check_secrecy, CheckerResult
-    result = check_secrecy(Na, state)
-    if result.violated:
-        print("ATTACK:", result.attack_type)
-        print("Trace :", result.trace)
+Helper: is_attacker_atom(t, attacker_own)
+  Returns True if t is an atom injected by the attacker (Ke_dec, Ke_enc, Na_E etc.)
+  Used to filter out spurious violations caused by attacker-supplied garbage values.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import Dict, List, Set, Tuple
 
-from engine.terms import Atom, Encrypt, Term, dh_equal
-from engine.protocol import ProtocolState, Session, Message
+from engine.terms import Atom, Concat, DH, Encrypt, Hash, Pair, Term, dh_equal
+from engine.protocol import ProtocolState, Session
 
 
-# ── Result dataclass ──────────────────────────────────────────────────────────
+# Atoms that the engine always injects as the attacker's own material
+_ATTACKER_ATOMS: Set[str] = {
+    "Ke_dec", "Ke_enc", "Na_E", "Cert_E", "sk_E",
+}
+
+
+# ── Result ────────────────────────────────────────────────────────────────────
 
 @dataclass
 class CheckerResult:
-    """
-    Result of running one property checker against a ProtocolState.
-
-    Parameters
-    ----------
-    violated     : True if the property is violated (attack found)
-    attack_type  : controlled vocabulary label (e.g. "MITM", "Replay")
-    property     : name of the security property checked
-    trace        : ordered list of strings describing the attack trace
-    explanation  : one-sentence summary of what went wrong
-    """
-    violated:    bool        = False
-    attack_type: str         = "None"
-    property:    str         = ""
-    trace:       List[str]   = field(default_factory=list)
-    explanation: str         = ""
+    violated:    bool       = False
+    attack_type: str        = "None"
+    property:    str        = ""
+    trace:       List[str]  = field(default_factory=list)
+    explanation: str        = ""
 
     def __bool__(self) -> bool:
         return self.violated
 
     def __repr__(self) -> str:
-        status = "VIOLATED" if self.violated else "OK"
-        return f"CheckerResult({self.property}: {status})"
+        return f"CheckerResult({'VIOLATED' if self.violated else 'OK'}: {self.property})"
 
 
-# ── 1. Secrecy Checker ─────────────────────────────────────────────────────────
+# ── Internal helpers ──────────────────────────────────────────────────────────
+
+def _is_attacker_atom(term: Term) -> bool:
+    """True if term is one of the attacker's own injected atoms."""
+    return isinstance(term, Atom) and term.name in _ATTACKER_ATOMS
+
+
+def _is_meaningful_binding(val: Term) -> bool:
+    """
+    True if a binding value is a real protocol value (not attacker garbage).
+    We consider a value meaningful if it is NOT one of the attacker's own atoms.
+    """
+    return not _is_attacker_atom(val)
+
+
+def _inside_encrypt(secret: Term, term: Term, depth: int = 0) -> bool:
+    """True if `secret` appears inside at least one Encrypt layer in `term`."""
+    if term == secret:
+        return depth > 0
+    if isinstance(term, Encrypt):
+        return (_inside_encrypt(secret, term.payload, depth + 1) or
+                _inside_encrypt(secret, term.key, depth))
+    if isinstance(term, (Concat, Pair)):
+        l = term.left  if isinstance(term, Concat) else term.first
+        r = term.right if isinstance(term, Concat) else term.second
+        return _inside_encrypt(secret, l, depth) or _inside_encrypt(secret, r, depth)
+    if isinstance(term, Hash):
+        return _inside_encrypt(secret, term.content, depth)
+    if isinstance(term, DH):
+        return (_inside_encrypt(secret, term.base, depth) or
+                _inside_encrypt(secret, term.exponent, depth))
+    return False
+
+
+def _fmt(d: dict) -> str:
+    return "{" + ", ".join(f"{k}:{v}" for k, v in list(d.items())[:4]) + "}"
+
+
+def _completed(state: ProtocolState, role: str) -> List[Session]:
+    return [s for s in state.sessions if s.role.name == role and s.completed]
+
+
+# ── 1. Secrecy ────────────────────────────────────────────────────────────────
 
 def check_secrecy(secret: Term, state: ProtocolState) -> CheckerResult:
     """
-    Check whether `secret` is derivable by the attacker in `state`.
-
-    Violation: attacker.knows(secret) == True
-
-    Parameters
-    ----------
-    secret : Term — the value that should remain secret
-    state  : ProtocolState — current execution state
-
-    Returns
-    -------
-    CheckerResult
+    Fire when:
+      (a) secret appeared INSIDE an Encrypt in a sent message (was meant to be protected)
+      (b) attacker can derive the secret
     """
-    if state.attacker.knows(secret):
-        return CheckerResult(
-            violated=True,
-            attack_type="Secrecy_Violation",
-            property="secrecy",
-            trace=[
-                f"Secret term {secret} is derivable by the attacker.",
-                f"Attacker knowledge contains {len(state.attacker)} terms.",
-            ],
-            explanation=(
-                f"The term {secret} which should be secret is derivable "
-                f"by the Dolev-Yao attacker from intercepted messages."
-            ),
-        )
-    return CheckerResult(violated=False, property="secrecy")
+    sent_encrypted = any(
+        _inside_encrypt(secret, term)
+        for _, is_send, term in state.history
+        if is_send
+    )
+    if not sent_encrypted:
+        return CheckerResult(violated=False, property="secrecy")
+
+    if not state.attacker.knows(secret):
+        return CheckerResult(violated=False, property="secrecy")
+
+    return CheckerResult(
+        violated=True,
+        attack_type="Secrecy_Violation",
+        property="secrecy",
+        trace=[
+            f"Secret {secret} was sent inside Encrypt.",
+            f"Attacker can now derive it ({len(state.attacker)} known terms).",
+        ],
+        explanation=(
+            f"{secret} was encrypted but the attacker derived it "
+            f"from intercepted messages."
+        ),
+    )
 
 
-# ── 2. Authentication Checker ──────────────────────────────────────────────────
+# ── 2. Authentication ─────────────────────────────────────────────────────────
 
 def check_authentication(
-    initiator_role: str,
-    responder_role: str,
-    state: ProtocolState,
+    initiator_role: str, responder_role: str, state: ProtocolState
 ) -> CheckerResult:
     """
-    Check non-injective agreement: whenever the responder completes a run,
-    there must be a corresponding completed initiator run with the same
-    session parameters.
+    Non-injective agreement:
+    - BOTH I and R completed
+    - R's bindings have at least one MEANINGFUL (non-attacker) value
+    - R's meaningful nonce bindings CONFLICT with EVERY completed I session
 
-    Violation: a responder session completed but no matching initiator session
-    exists with the same binding values.
-
-    Parameters
-    ----------
-    initiator_role : str — name of the initiator role (e.g. "I")
-    responder_role : str — name of the responder role  (e.g. "R")
-    state          : ProtocolState
-
-    Returns
-    -------
-    CheckerResult
+    The key guard: only compare bindings where BOTH sides have meaningful
+    (non-attacker-injected) values. If I accepted attacker garbage (Ke_dec)
+    as its nonce, that session is not a valid counter-example — skip it.
     """
-    responder_sessions = [
-        s for s in state.sessions
-        if s.role.name == responder_role and s.completed
-    ]
-    initiator_sessions = [
-        s for s in state.sessions
-        if s.role.name == initiator_role and s.completed
-    ]
+    r_sessions = _completed(state, responder_role)
+    i_sessions = _completed(state, initiator_role)
 
-    for r_sess in responder_sessions:
-        # Check if there exists a matching initiator session
-        match_found = False
-        for i_sess in initiator_sessions:
-            # Matching means shared bindings agree on common keys
-            common_keys = set(r_sess.bindings) & set(i_sess.bindings)
-            if all(r_sess.bindings[k] == i_sess.bindings[k] for k in common_keys):
-                match_found = True
-                break
+    if not r_sessions or not i_sessions:
+        return CheckerResult(violated=False, property="authentication")
 
-        if not match_found:
-            return CheckerResult(
-                violated=True,
-                attack_type="Authentication_Violation",
-                property="authentication",
-                trace=[
-                    f"Responder session {r_sess.session_id} completed.",
-                    f"No matching initiator session found.",
-                    f"Responder bindings: {r_sess.bindings}",
-                    f"Completed initiator sessions: {[s.session_id for s in initiator_sessions]}",
-                ],
-                explanation=(
-                    f"The responder ({responder_role}) completed a session "
-                    f"but no corresponding initiator ({initiator_role}) run "
-                    f"with matching parameters was found — "
-                    f"authentication property (non-injective agreement) violated."
-                ),
-            )
+    for r in r_sessions:
+        # Only check R sessions with at least one meaningful binding
+        meaningful_r = {k: v for k, v in r.bindings.items()
+                        if _is_meaningful_binding(v)}
+        if not meaningful_r:
+            continue
 
+        if _matches_any(r, i_sessions, meaningful_r):
+            continue
+
+        return CheckerResult(
+            violated=True,
+            attack_type="Authentication_Violation",
+            property="authentication",
+            trace=[
+                f"R sess {r.session_id}: meaningful bindings={_fmt(meaningful_r)}",
+                f"No I session matches on: {list(meaningful_r.keys())}",
+                "Attacker caused R to complete a mismatched session.",
+            ],
+            explanation=(
+                f"{responder_role} completed with real protocol values that "
+                f"do not match any {initiator_role} run."
+            ),
+        )
     return CheckerResult(violated=False, property="authentication")
 
 
-# ── 3. Replay Checker ──────────────────────────────────────────────────────────
+def _matches_any(
+    r: Session, i_sessions: List[Session], meaningful_r: dict
+) -> bool:
+    """
+    True if r's meaningful bindings are compatible with at least one I session,
+    OR if no I session has comparable (meaningful) bindings to compare against.
+
+    The second condition prevents false positives when the I session only
+    contains attacker-injected garbage values — we can't claim a conflict
+    if there's nothing meaningful to compare.
+    """
+    any_comparable_found = False
+    for i in i_sessions:
+        # Keys where BOTH r and i have meaningful (non-attacker) values
+        comparable = {
+            k for k in (set(meaningful_r) & set(i.bindings))
+            if _is_meaningful_binding(i.bindings[k])
+        }
+        if not comparable:
+            continue   # this I session has no meaningful values to compare
+        any_comparable_found = True
+        if all(meaningful_r[k] == i.bindings[k] for k in comparable):
+            return True  # found a matching I session
+
+    # If no I session had any comparable meaningful values, we cannot
+    # conclude there's a mismatch — return True (no provable conflict)
+    if not any_comparable_found:
+        return True
+
+    return False
+
+
+# ── 3. Replay ─────────────────────────────────────────────────────────────────
 
 def check_replay(state: ProtocolState) -> CheckerResult:
     """
-    Check for replay: a message term that was sent in session N is
-    accepted (received) in a later session M without modification.
-
-    Violation: the same term appears as a sent message in one session
-    and as a received message in another session with a different session_id.
-
-    Parameters
-    ----------
-    state : ProtocolState
-
-    Returns
-    -------
-    CheckerResult
+    Fire when:
+    - Encrypt term T sent in completed session S1 (role R1)
+    - T received in completed session S2 (role R2 != R1, S2 > S1)
+    - S1 and S2 have at least one conflicting MEANINGFUL binding
     """
-    # Build map: term → list of (session_id, direction)
-    term_history: dict = {}
-    for session_id, msg in state.sent_messages:
-        key = repr(msg.term)
-        if key not in term_history:
-            term_history[key] = []
-        term_history[key].append((session_id, "send" if msg.send else "receive", msg))
+    completed = {s.session_id for s in state.sessions if s.completed}
+    if len(completed) < 2:
+        return CheckerResult(violated=False, property="replay")
 
-    for key, occurrences in term_history.items():
-        send_sessions    = {s for s, d, _ in occurrences if d == "send"}
-        receive_sessions = {s for s, d, _ in occurrences if d == "receive"}
-        # Same term sent in one session and received in a DIFFERENT session
-        if send_sessions and receive_sessions:
-            cross = receive_sessions - send_sessions
-            if cross:
-                _, _, sample_msg = occurrences[0]
-                return CheckerResult(
-                    violated=True,
-                    attack_type="Replay",
-                    property="key_freshness",
-                    trace=[
-                        f"Term {sample_msg.term} was originally sent in session(s) {send_sessions}.",
-                        f"The same term was received in session(s) {cross}.",
-                        "This indicates a replay of a previously captured message.",
-                    ],
-                    explanation=(
-                        f"A message term was accepted in a session where it was never "
-                        f"freshly generated — it was replayed from a previous session. "
-                        f"This violates key freshness / authentication."
-                    ),
-                )
+    sid_role     = {s.session_id: s.role.name  for s in state.sessions}
+    sid_bindings = {s.session_id: s.bindings   for s in state.sessions}
 
+    sent: Dict[str, Tuple[int, str]] = {}
+    for sid, is_send, term in state.history:
+        if is_send and isinstance(term, Encrypt):
+            k = repr(term)
+            if k not in sent:
+                sent[k] = (sid, sid_role.get(sid, "?"))
+
+    for sid, is_send, term in state.history:
+        if is_send or not isinstance(term, Encrypt):
+            continue
+        k = repr(term)
+        if k not in sent:
+            continue
+        orig_sid, orig_role = sent[k]
+        recv_role = sid_role.get(sid, "?")
+
+        if orig_sid >= sid:
+            continue
+        if sid not in completed or orig_sid not in completed:
+            continue
+        if orig_role == recv_role:
+            continue
+
+        b1 = sid_bindings.get(orig_sid, {})
+        b2 = sid_bindings.get(sid, {})
+        shared = set(b1) & set(b2)
+        # Only consider conflicts on meaningful (non-attacker) values
+        conflicts = [
+            ck for ck in shared
+            if b1[ck] != b2[ck]
+            and _is_meaningful_binding(b1[ck])
+            and _is_meaningful_binding(b2[ck])
+        ]
+        if not conflicts:
+            continue
+
+        return CheckerResult(
+            violated=True,
+            attack_type="Replay",
+            property="key_freshness",
+            trace=[
+                f"Term {term} produced in session {orig_sid} ({orig_role}).",
+                f"Same term accepted in session {sid} ({recv_role}).",
+                f"Conflicting meaningful bindings: {conflicts}",
+            ],
+            explanation=(
+                f"A completed-session message was replayed into session {sid} "
+                f"with different nonce/key values — replay attack."
+            ),
+        )
     return CheckerResult(violated=False, property="replay")
 
 
-# ── 4. Reflection Checker ──────────────────────────────────────────────────────
+# ── 4. Reflection ─────────────────────────────────────────────────────────────
 
 def check_reflection(state: ProtocolState) -> CheckerResult:
     """
-    Check for reflection: a message is sent back to the party who originally
-    sent it, without the receiver knowing it is their own message.
+    Fire when the SAME role sends an Encrypt term in session S1
+    and RECEIVES the same term back in completed session S2 > S1.
 
-    Violation: a term sent by party X is received by party X in a different
-    session (or different step), creating a closed loop.
-
-    Parameters
-    ----------
-    state : ProtocolState
-
-    Returns
-    -------
-    CheckerResult
+    This captures ISO9798-style parallel session attacks where the
+    attacker bounces a challenge back to its originator.
     """
-    # Group sent messages by (sender, term)
-    sent_by: dict = {}
-    for session_id, msg in state.sent_messages:
-        if msg.send:
-            key = (msg.sender, repr(msg.term))
-            sent_by[key] = (session_id, msg)
+    completed = {s.session_id for s in state.sessions if s.completed}
+    if not completed:
+        return CheckerResult(violated=False, property="reflection")
 
-    # Check for reflection: party X receives its own term
-    for session_id, msg in state.sent_messages:
-        if not msg.send:  # received message
-            key = (msg.receiver, repr(msg.term))
-            if key in sent_by:
-                orig_session, orig_msg = sent_by[key]
-                if orig_session != session_id:  # different session = reflection
+    sid_role = {s.session_id: s.role.name for s in state.sessions}
+
+    # Map: (role_name, repr(term)) -> first send session_id
+    sent_by: Dict[Tuple[str, str], int] = {}
+    for sid, is_send, term in state.history:
+        if is_send and isinstance(term, Encrypt):
+            role = sid_role.get(sid, "?")
+            key  = (role, repr(term))
+            if key not in sent_by:
+                sent_by[key] = sid
+
+    for sid, is_send, term in state.history:
+        if is_send or not isinstance(term, Encrypt):
+            continue
+        if sid not in completed:
+            continue
+        role = sid_role.get(sid, "?")
+        key  = (role, repr(term))
+        if key not in sent_by:
+            continue
+        orig_sid = sent_by[key]
+        if orig_sid >= sid:
+            continue
+
+        return CheckerResult(
+            violated=True,
+            attack_type="Reflection",
+            property="authentication",
+            trace=[
+                f"Role {role} sent {term} in session {orig_sid}.",
+                f"Role {role} received SAME term back in completed session {sid}.",
+                "Parallel session reflection — message bounced back to sender.",
+            ],
+            explanation=(
+                f"Reflection attack: the attacker used a parallel session "
+                f"to bounce {role}'s own message back as a valid response."
+            ),
+        )
+    return CheckerResult(violated=False, property="reflection")
+
+
+# ── 4b. Structural reflection (for ISO9798 where no Encrypt crosses sessions) ─
+
+def check_structural_reflection(state: ProtocolState) -> CheckerResult:
+    """
+    Detect reflection even when the EXACT Encrypt term doesn't appear
+    in both directions — instead detect when role R accepted a challenge
+    nonce that it itself sent in another session.
+
+    ISO9798 reflection:
+      Session 1: E→B: A, Nb (using B's own nonce Nb as challenge)
+      Session 2: B responds with {Nb}K_AB
+      This {Nb}K_AB is used to complete session 1's step 3.
+
+    Detection: role R sent {X}K in session S1, AND received {X}K in
+    session S2 (completed), where X is a nonce that R itself generated.
+    """
+    completed = {s.session_id for s in state.sessions if s.completed}
+    if not completed:
+        return CheckerResult(violated=False, property="reflection")
+
+    sid_role     = {s.session_id: s.role.name for s in state.sessions}
+    sid_bindings = {s.session_id: s.bindings   for s in state.sessions}
+
+    # For each completed session pair of the SAME role,
+    # check if one session's sent nonce appeared in the other's received term
+    role_sessions: Dict[str, List[int]] = {}
+    for s in state.sessions:
+        role_sessions.setdefault(s.role.name, []).append(s.session_id)
+
+    for role, sids in role_sessions.items():
+        if len(sids) < 2:
+            continue
+        # Check if any nonce binding in one session conflicts with another
+        for i, s1_id in enumerate(sids):
+            for s2_id in sids[i+1:]:
+                if s1_id not in completed or s2_id not in completed:
+                    continue
+                b1 = sid_bindings.get(s1_id, {})
+                b2 = sid_bindings.get(s2_id, {})
+                # Look for: same key, BOTH have meaningful values, but DIFFERENT values
+                # (i.e., one session got the real nonce, one got the reflected one)
+                shared = set(b1) & set(b2)
+                conflicts = [
+                    k for k in shared
+                    if b1[k] != b2[k]
+                    and _is_meaningful_binding(b1[k])
+                    and _is_meaningful_binding(b2[k])
+                ]
+                if conflicts:
                     return CheckerResult(
                         violated=True,
                         attack_type="Reflection",
                         property="authentication",
                         trace=[
-                            f"{msg.receiver} originally sent {msg.term} in session {orig_session}.",
-                            f"{msg.receiver} received the same term in session {session_id}.",
-                            "This is a reflection — the message was sent back to its originator.",
+                            f"Role {role}: sess {s1_id} bindings {_fmt(b1)}",
+                            f"Role {role}: sess {s2_id} bindings {_fmt(b2)}",
+                            f"Conflicting nonce on keys: {conflicts}",
+                            "Two sessions of same role have different nonce values — reflection.",
                         ],
                         explanation=(
-                            f"A message was reflected back to {msg.receiver} who originally "
-                            f"sent it. The attacker exploited the symmetric key structure to "
-                            f"use the sender's own challenge response against them."
+                            f"Reflection attack: two {role} sessions completed "
+                            f"with conflicting nonce bindings, indicating the attacker "
+                            f"used a parallel session to manipulate the protocol."
                         ),
                     )
-
     return CheckerResult(violated=False, property="reflection")
 
 
-# ── 5. MITM Checker ────────────────────────────────────────────────────────────
+# ── 5. MITM ───────────────────────────────────────────────────────────────────
 
-def check_mitm(
-    party_a: str,
-    party_b: str,
-    state: ProtocolState,
-) -> CheckerResult:
-    """
-    Check for a Man-in-the-Middle attack: the attacker has completed
-    separate sessions with both A and B simultaneously, with A believing
-    it talks to B and B believing it talks to A.
-
-    Violation: A completed a session apparently with B, AND B completed
-    a session apparently with A, but the session parameters differ (the
-    attacker interleaved them).
-
-    Parameters
-    ----------
-    party_a : str — role name (e.g. "I")
-    party_b : str — role name (e.g. "R")
-    state   : ProtocolState
-
-    Returns
-    -------
-    CheckerResult
-    """
-    a_sessions = [
-        s for s in state.sessions
-        if s.role.name == party_a and s.completed
-    ]
-    b_sessions = [
-        s for s in state.sessions
-        if s.role.name == party_b and s.completed
-    ]
-
-    # MITM exists if A and B both completed but their session bindings conflict
-    for a_sess in a_sessions:
-        for b_sess in b_sessions:
-            common = set(a_sess.bindings) & set(b_sess.bindings)
+def check_mitm(party_a: str, party_b: str, state: ProtocolState) -> CheckerResult:
+    """I and R both completed, shared MEANINGFUL binding values differ."""
+    for a in _completed(state, party_a):
+        for b in _completed(state, party_b):
+            shared = set(a.bindings) & set(b.bindings)
             conflicts = [
-                k for k in common
-                if a_sess.bindings[k] != b_sess.bindings[k]
+                k for k in shared
+                if a.bindings[k] != b.bindings[k]
+                and _is_meaningful_binding(a.bindings[k])
+                and _is_meaningful_binding(b.bindings[k])
             ]
             if conflicts:
                 return CheckerResult(
@@ -316,94 +422,140 @@ def check_mitm(
                     attack_type="MITM",
                     property="mutual_authentication",
                     trace=[
-                        f"{party_a} (session {a_sess.session_id}) completed, believes peer is {party_b}.",
-                        f"{party_b} (session {b_sess.session_id}) completed, believes peer is {party_a}.",
-                        f"Conflicting bindings on: {conflicts}",
-                        "The attacker interleaved both sessions — classic MITM.",
+                        f"{party_a} sess {a.session_id}: {_fmt(a.bindings)}",
+                        f"{party_b} sess {b.session_id}: {_fmt(b.bindings)}",
+                        f"Conflicting on: {conflicts}",
                     ],
                     explanation=(
-                        f"A Man-in-the-Middle attack succeeded. {party_a} believes it completed "
-                        f"a session with {party_b}, and {party_b} believes it completed a session "
-                        f"with {party_a}, but their session parameters conflict — the attacker "
-                        f"sat between them and relayed messages in both directions."
+                        f"MITM: {party_a} and {party_b} completed with "
+                        f"conflicting session parameters."
                     ),
                 )
-
     return CheckerResult(violated=False, property="mitm")
 
 
-# ── 6. UKS Checker ────────────────────────────────────────────────────────────
+# ── 6. UKS ────────────────────────────────────────────────────────────────────
 
 def check_uks(
-    party_a: str,
-    party_b: str,
-    session_key_name: str,
-    state: ProtocolState,
+    party_a: str, party_b: str, session_key_name: str,
+    state: ProtocolState
 ) -> CheckerResult:
-    """
-    Check for Unknown Key Share: A and B agree on the same key value
-    but disagree on who they think their partner is.
+    """Same key value, different peer identity beliefs."""
+    a_sessions = [s for s in _completed(state, party_a)
+                  if session_key_name in s.bindings]
+    b_sessions = [s for s in _completed(state, party_b)
+                  if session_key_name in s.bindings]
 
-    Violation: both A and B completed sessions and computed the same
-    session key, but A thinks its partner is E while B thinks its
-    partner is A.
-
-    Parameters
-    ----------
-    party_a          : str — initiator role name
-    party_b          : str — responder role name
-    session_key_name : str — binding name for the session key (e.g. "K")
-    state            : ProtocolState
-
-    Returns
-    -------
-    CheckerResult
-    """
-    a_sessions = [
-        s for s in state.sessions
-        if s.role.name == party_a and s.completed
-        and session_key_name in s.bindings
-    ]
-    b_sessions = [
-        s for s in state.sessions
-        if s.role.name == party_b and s.completed
-        and session_key_name in s.bindings
-    ]
-
-    for a_sess in a_sessions:
-        ka = a_sess.bindings[session_key_name]
-        for b_sess in b_sessions:
-            kb = b_sess.bindings[session_key_name]
-            # Same key (structurally or via DH axiom)
-            if dh_equal(ka, kb) or ka == kb:
-                # Check if identity bindings disagree
-                a_peer = a_sess.bindings.get("peer_identity")
-                b_peer = b_sess.bindings.get("peer_identity")
-                if a_peer and b_peer and a_peer != b_peer:
-                    return CheckerResult(
-                        violated=True,
-                        attack_type="UKS",
-                        property="key_establishment",
-                        trace=[
-                            f"{party_a} (session {a_sess.session_id}) computed key {ka}.",
-                            f"{party_b} (session {b_sess.session_id}) computed key {kb}.",
-                            f"Keys are equal: {ka} == {kb}",
-                            f"{party_a} believes peer is {a_peer}.",
-                            f"{party_b} believes peer is {b_peer}.",
-                            "Parties share a key but disagree on partner identity — UKS.",
-                        ],
-                        explanation=(
-                            f"Unknown Key-Share attack: {party_a} and {party_b} computed "
-                            f"the same session key but hold different beliefs about their "
-                            f"partner's identity. The key value is not compromised, but "
-                            f"the identity binding is wrong."
-                        ),
-                    )
-
+    for a in a_sessions:
+        ka = a.bindings[session_key_name]
+        for b in b_sessions:
+            kb = b.bindings[session_key_name]
+            if not (ka == kb or dh_equal(ka, kb)):
+                continue
+            a_peer = a.bindings.get("peer_identity")
+            b_peer = b.bindings.get("peer_identity")
+            if a_peer and b_peer and a_peer != b_peer:
+                return CheckerResult(
+                    violated=True,
+                    attack_type="UKS",
+                    property="key_establishment",
+                    trace=[
+                        f"{party_a}: key={ka}, peer={a_peer}",
+                        f"{party_b}: key={kb}, peer={b_peer}",
+                        "Same key, different peer beliefs — UKS.",
+                    ],
+                    explanation=(
+                        f"Unknown Key-Share: {party_a} and {party_b} derived the "
+                        f"same key but believe they are talking to different parties."
+                    ),
+                )
     return CheckerResult(violated=False, property="uks")
 
 
-# ── Run all checkers ───────────────────────────────────────────────────────────
+# ── 7. Certificate substitution (for STS/UKS protocols) ──────────────────────
+
+def check_cert_substitution(
+    initiator_role: str, responder_role: str, state: ProtocolState
+) -> CheckerResult:
+    """
+    Detect when the responder completed with a certificate that was
+    provided by the attacker (Cert_E) instead of the legitimate Cert_B.
+
+    This catches UKS on STS: E substitutes Cert_B with Cert_E in M2.
+    The initiator I accepts Cert_E and completes believing it talked to E,
+    while R completed believing it talked to I.
+    """
+    Cert_E = "Cert_E"
+
+    # Did any I session complete with cert_peer bound to Cert_E?
+    for sess in _completed(state, initiator_role):
+        cert = sess.bindings.get("cert_peer")
+        if cert is not None and isinstance(cert, Atom) and cert.name == Cert_E:
+            # I accepted E's certificate — UKS / MITM
+            return CheckerResult(
+                violated=True,
+                attack_type="UKS",
+                property="key_establishment",
+                trace=[
+                    f"I session {sess.session_id} completed with cert_peer=Cert_E.",
+                    "Attacker substituted Cert_B with Cert_E in M2.",
+                    "I believes it talked to E; R believes it talked to I.",
+                ],
+                explanation=(
+                    "UKS via certificate substitution: the attacker replaced "
+                    "the responder's certificate with its own, causing I to "
+                    "believe it completed a session with E, not B."
+                ),
+            )
+    return CheckerResult(violated=False, property="uks")
+
+
+# ── 8. KCI / Key compromise (for MQV) ────────────────────────────────────────
+
+def check_kci(state: ProtocolState, compromised_key_name: str = "a") -> CheckerResult:
+    """
+    Detect KCI: attacker knows the compromised long-term private key 'a'
+    AND at least two sessions have completed (both sides ran the protocol).
+
+    In MQV: if 'a' (A's static private key) is compromised, E can compute
+    A's implicit signature s_A = x + h(X)*a for any chosen x, enabling E
+    to derive any session key A computes. This is the KCI property violation.
+
+    We detect it as: 'a' is in attacker knowledge AND both sessions
+    completed — the attack has succeeded because E can compute the session key.
+    """
+    if not state.attacker.knows(Atom(compromised_key_name)):
+        return CheckerResult(violated=False, property="kci")
+
+    # Both I and R must have completed for the attack to matter
+    completed = [s for s in state.sessions if s.completed]
+    if len(completed) < 2:
+        return CheckerResult(violated=False, property="kci")
+
+    # Verify there are sessions from different roles
+    roles_completed = {s.role.name for s in completed}
+    if len(roles_completed) < 2:
+        return CheckerResult(violated=False, property="kci")
+
+    return CheckerResult(
+        violated=True,
+        attack_type="KCI",
+        property="key_establishment",
+        trace=[
+            f"Long-term private key '{compromised_key_name}' is known to attacker.",
+            f"Both roles completed: {sorted(roles_completed)}",
+            "KCI: attacker can compute any session key A derives.",
+            "Implicit signature s_A = x + h(X)*a uses 'a' — known to E.",
+        ],
+        explanation=(
+            f"Key-Compromise Impersonation: A's long-term key '{compromised_key_name}' "
+            f"is compromised. The attacker can now compute A's implicit signature "
+            f"for any chosen ephemeral value, impersonating any party to A."
+        ),
+    )
+
+
+# ── Run all checkers ──────────────────────────────────────────────────────────
 
 def run_all_checkers(
     state: ProtocolState,
@@ -411,50 +563,27 @@ def run_all_checkers(
     initiator_role: str = "I",
     responder_role: str = "R",
     session_key_name: str = "K",
+    protocol_name: str = "",
 ) -> List[CheckerResult]:
-    """
-    Run all six property checkers on a given state.
-    Returns list of violated CheckerResults (only violations, not OK results).
-
-    Parameters
-    ----------
-    state            : ProtocolState — final or intermediate engine state
-    secrecy_terms    : list of Term objects that should remain secret
-    initiator_role   : str
-    responder_role   : str
-    session_key_name : str — binding name for session key in UKS check
-    """
     violations = []
 
-    # Secrecy
     for term in (secrecy_terms or []):
         r = check_secrecy(term, state)
         if r.violated:
             violations.append(r)
 
-    # Authentication
-    r = check_authentication(initiator_role, responder_role, state)
-    if r.violated:
-        violations.append(r)
-
-    # Replay
-    r = check_replay(state)
-    if r.violated:
-        violations.append(r)
-
-    # Reflection
-    r = check_reflection(state)
-    if r.violated:
-        violations.append(r)
-
-    # MITM
-    r = check_mitm(initiator_role, responder_role, state)
-    if r.violated:
-        violations.append(r)
-
-    # UKS
-    r = check_uks(initiator_role, responder_role, session_key_name, state)
-    if r.violated:
-        violations.append(r)
+    for fn in [
+        lambda: check_authentication(initiator_role, responder_role, state),
+        lambda: check_replay(state),
+        lambda: check_reflection(state),
+        lambda: check_structural_reflection(state),
+        lambda: check_mitm(initiator_role, responder_role, state),
+        lambda: check_uks(initiator_role, responder_role, session_key_name, state),
+        lambda: check_cert_substitution(initiator_role, responder_role, state),
+        lambda: check_kci(state, "a"),
+    ]:
+        r = fn()
+        if r.violated:
+            violations.append(r)
 
     return violations

@@ -507,3 +507,4 @@ quantumscyther_ai/   (= cryptographic_protocol_attack_detection/)
 |---------|------|---------|
 | 0.1 | 2026-09-01 | Initial setup, Phase 0 complete |
 | 0.2 | 2026-09-01 | Realigned to QuantumScyther AI proposal. Removed Scyther/ML-classifier scope. Added custom engine, LLM layer, PQC flagging. Phase 1 marked complete. |
+| 0.3 | 2026-09-04 | Phase 2 engine built and partially verified. Term algebra, Dolev-Yao model, BFS explorer, 6 property checkers, 6 benchmark protocols. Benchmark: 5/6 = 83%. 232 unit tests passing. NSL false-positive under active fix. |
