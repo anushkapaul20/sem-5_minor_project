@@ -300,6 +300,48 @@ if verify_btn:
     else:
         st.info("No primitives detected — enter equations to enable PQC analysis.")
 
+    # ── ML Prediction ─────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("## 🤖 ML Model Prediction")
+    st.caption("TF-IDF + Logistic Regression (Model A) · TF-IDF + Random Forest (Model B) · Trained on 11 papers")
+
+    try:
+        from models.training.train_baseline import predict, serialise_record
+        pseudo = {
+            "protocol_name":           short_name if short_name != "CUSTOM" else "Custom",
+            "protocol_type":           "authentication",
+            "participants":            ["A", "B"],
+            "trusted_third_party":     False,
+            "cryptographic_primitives": primitives,
+            "original_equations":      equations,
+            "message_step_count":      len(msgs),
+            "attacker_model":          "Dolev-Yao",
+            "attacker_capabilities":   ["intercept", "forward", "impersonate"],
+            "security_property_targeted": [],
+        }
+        feat = serialise_record(pseudo, include_attack_name=False)
+        ml_result = predict(feat, dataset_version="v1")
+
+        if "error" in ml_result:
+            st.warning(ml_result["error"])
+        else:
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                if ml_result["attack_present"] == 1:
+                    st.error(f"**ML says: ATTACK** ({ml_result['confidence_binary']:.0%} conf)")
+                else:
+                    st.success(f"**ML says: SECURE** ({ml_result['confidence_binary']:.0%} conf)")
+            with c2:
+                st.info(f"**Predicted category:** {ml_result['attack_category']}")
+            with c3:
+                st.info(f"**Category confidence:** {ml_result['confidence_multi']:.0%}")
+            st.caption(
+                "⚠️ **ML-based prediction** — trained on 11 papers (indicative only). "
+                "The formal engine result above is more reliable."
+            )
+    except Exception as ex:
+        st.info(f"ML model not available: {ex}")
+
     # ── Method label ────────────────────────────────────────────────────────
     st.markdown("---")
     if is_engine_result:

@@ -1,0 +1,29 @@
+{
+  "dataset_version": "v1",
+  "training_date": "2026-09-08",
+  "n_records": 11,
+  "n_attack_records": 9,
+  "n_secure_records": 2,
+  "attack_categories": [
+    "KCI",
+    "MITM",
+    "Reflection",
+    "Replay",
+    "UKS"
+  ],
+  "model_A": {
+    "type": "TF-IDF + Logistic Regression",
+    "task": "binary (attack_present)",
+    "path": "C:\\Users\\ANUSHKA PAUL\\Desktop\\proverif_sem5\\cryptographic_protocol_attack_detection\\models\\saved_models\\model_binary_v1.pkl",
+    "loo_accuracy": 0.9090909090909091,
+    "loo_f1": 0.9155080213903743
+  },
+  "model_B": {
+    "type": "TF-IDF + Random Forest",
+    "task": "multi-class (attack_category)",
+    "path": "C:\\Users\\ANUSHKA PAUL\\Desktop\\proverif_sem5\\cryptographic_protocol_attack_detection\\models\\saved_models\\model_multiclass_v1.pkl",
+    "loo_accuracy": 0.4444444444444444,
+    "loo_f1": 0.37037037037037035
+  },
+  "evaluation_note": "Leave-One-Out CV on small dataset. 11 total records is below the recommended minimum for reliable ML evaluation. Results are indicative only. Expand dataset to 50+ records for meaningful evaluation."
+}

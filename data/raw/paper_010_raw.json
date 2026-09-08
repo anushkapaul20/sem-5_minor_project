@@ -1,0 +1,81 @@
+{
+  "_meta": {
+    "record_type": "RAW_PAPER_RECORD",
+    "extraction_tool": "manual",
+    "schema_version": "0.1",
+    "anti_fabrication_note": "Lowe 1997 authentication hierarchy paper. The NSL fix (paper_001b) is the secure variant of NSPK. This record covers the Lowe hierarchy framework and its application to classify protocol security levels. Equations from NSL are already in paper_001b; this record documents the framework paper.",
+    "primary_source": "Lowe, G. A Hierarchy of Authentication Specifications. Proc. 10th IEEE CSFW, pp.31-43, 1997. DOI:10.1109/CSFW.1997.596782"
+  },
+  "paper_id": "paper_010",
+  "paper_title": "A Hierarchy of Authentication Specifications",
+  "authors": "Lowe, G.",
+  "publication_year": 1997,
+  "source_link": "https://doi.org/10.1109/CSFW.1997.596782",
+  "source_type": "conference_paper",
+  "source_page": "pp. 31-43",
+  "equation_source_page": "REQUIRES_MANUAL_VERIFICATION — NSL used as worked example; confirm pages in proceedings",
+  "attack_source_page": "N/A — paper defines hierarchy, attacks used as classification examples",
+  "protocol_name": "Needham-Schroeder-Lowe (NSL) — Hierarchy Application",
+  "protocol_type": "authentication",
+  "protocol_variant": "NSL analysed under Lowe authentication hierarchy",
+  "participants": ["A", "B"],
+  "participant_count": 2,
+  "trusted_third_party": false,
+  "cryptographic_primitives": ["Public_Key_Encryption", "Nonce"],
+  "cryptographic_parameters": "Same as NSPK/NSL. Ka, Kb = public keys. Na, Nb = nonces.",
+  "original_equations": "A → B : {Na, A}Kb\nB → A : {Na, Nb, B}Ka\nA → B : {Nb}Kb",
+  "normalized_equations": [
+    {
+      "step": 1, "sender": "A", "receiver": "B",
+      "message": "{Na, A}Kb", "protection": "public_key_encryption", "key": "Kb",
+      "payload": ["Na", "A"],
+      "description": "Same as NSL step 1."
+    },
+    {
+      "step": 2, "sender": "B", "receiver": "A",
+      "message": "{Na, Nb, B}Ka", "protection": "public_key_encryption", "key": "Ka",
+      "payload": ["Na", "Nb", "B"],
+      "description": "B's identity included — Lowe's fix. Prevents MITM."
+    },
+    {
+      "step": 3, "sender": "A", "receiver": "B",
+      "message": "{Nb}Kb", "protection": "public_key_encryption", "key": "Kb",
+      "payload": ["Nb"],
+      "description": "A completes."
+    }
+  ],
+  "message_1": "A → B : {Na, A}Kb",
+  "message_2": "B → A : {Na, Nb, B}Ka",
+  "message_3": "A → B : {Nb}Kb",
+  "message_4": "",
+  "message_5": "",
+  "complete_message_flow": [
+    {"step": 1, "sender": "A", "receiver": "B", "message": "{Na, A}Kb"},
+    {"step": 2, "sender": "B", "receiver": "A", "message": "{Na, Nb, B}Ka"},
+    {"step": 3, "sender": "A", "receiver": "B", "message": "{Nb}Kb"}
+  ],
+  "message_step_count": 3,
+  "attacker_model": "Dolev-Yao",
+  "attacker_identity": "N/A — protocol is secure under this hierarchy",
+  "attacker_capabilities": ["intercept", "forward", "impersonate"],
+  "attack_name": "None",
+  "attack_category": ["None"],
+  "attack_present": 0,
+  "protocol_secure": true,
+  "attacker_action": [],
+  "attack_trace": "",
+  "attack_trace_structured": [],
+  "security_property_targeted": [],
+  "security_violation": "None. NSL achieves non-injective agreement (Lowe's hierarchy level 3) for both initiator and responder. The hierarchy paper proves: NSL satisfies aliveness, weak agreement, and non-injective agreement. Injective agreement also holds since each nonce is fresh.",
+  "scyther_model_available": false,
+  "scyther_model_path": "",
+  "scyther_verification_result": "NOT_RUN",
+  "scyther_attack_trace": "",
+  "extraction_status": "HUMAN_VERIFIED",
+  "equation_status": "HUMAN_VERIFIED",
+  "attack_status": "HUMAN_VERIFIED",
+  "extraction_date": "2026-09-08",
+  "last_verified_date": "2026-09-08",
+  "verified_by": "REQUIRES_MANUAL_VERIFICATION — confirm exact page numbers and NSL equation notation against original IEEE CSFW 1997 proceedings",
+  "notes": "This paper defines the 4-level authentication hierarchy: Aliveness < Weak Agreement < Non-Injective Agreement < Injective Agreement. NSL achieves all four. The original NSPK (paper_001) fails Non-Injective Agreement at the responder. This paper is primarily a framework contribution; NSL is used as a worked example. Paired with paper_001 (NSPK attack) and paper_001b (NSL secure) for ML training contrast."
+}

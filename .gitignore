@@ -25,10 +25,10 @@ config.local.yaml
 .ipynb_checkpoints/
 *.ipynb_checkpoints
 
-# ML model artifacts (large binaries)
-models/saved_models/*.pkl
-models/saved_models/*.pt
-models/saved_models/*.bin
+# ML model artifacts — allow v1 trained models
+# models/saved_models/*.pkl
+# models/saved_models/*.pt
+# models/saved_models/*.bin
 
 # Data (never commit raw data or PDFs)
 papers/sources/*.pdf
